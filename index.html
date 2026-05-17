@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Billionaire Tracker</title>
+
+  <!-- Leaflet CSS — the mapping library -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Font — Rajdhani for the aviation/tech feel -->
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0b0e14;
+      --panel-bg:    #0f1319;
+      --panel-border:#1e2530;
+      --accent:      #00d4ff;
+      --accent2:     #ff6b35;
+      --text:        #c8d8e8;
+      --text-dim:    #5a7080;
+      --trail:       #00d4ff;
+      --good:        #39ff8a;
+      --warn:        #ffd700;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 15px;
+      overflow: hidden;
+    }
+
+    /* ── Header bar ───────────────────────────────────────── */
+    #header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      height: 48px;
+      background: rgba(11,14,20,0.95);
+      border-bottom: 1px solid var(--panel-border);
+      display: flex; align-items: center; gap: 18px;
+      padding: 0 20px;
+      backdrop-filter: blur(8px);
+    }
+    #header h1 {
+      font-size: 20px; font-weight: 700; letter-spacing: 3px;
+      color: var(--accent); text-transform: uppercase;
+    }
+    #header h1 span { color: var(--text-dim); font-weight: 400; }
+
+    /* Live / mock badge */
+    #source-badge {
+      font-size: 10px; font-family: 'Share Tech Mono', monospace;
+      padding: 3px 8px; border-radius: 3px; letter-spacing: 1px;
+      background: rgba(255,107,53,0.15); color: var(--accent2);
+      border: 1px solid var(--accent2);
+    }
+
+    /* Plane count */
+    #plane-count {
+      margin-left: auto;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px; color: var(--text-dim);
+    }
+    #plane-count b { color: var(--accent); font-size: 16px; }
+
+    /* Refresh button */
+    #refresh-btn {
+      background: none; border: 1px solid var(--panel-border);
+      color: var(--text-dim); padding: 4px 12px; border-radius: 4px;
+      cursor: pointer; font-family: inherit; font-size: 12px;
+      letter-spacing: 1px; transition: all .2s;
+    }
+    #refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Map fills remaining space ────────────────────────── */
+    #map {
+      position: fixed;
+      top: 48px; bottom: 0; left: 0; right: 0;
+    }
+
+    /* ── Detail panel ─────────────────────────────────────── */
+    #detail-panel {
+      position: fixed;
+      top: 60px; right: 12px;
+      width: 300px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      z-index: 900;
+      display: none;         /* hidden until a plane is clicked */
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      animation: slideIn .2s ease;
+    }
+    @keyframes slideIn {
+      from { opacity:0; transform: translateX(16px); }
+      to   { opacity:1; transform: translateX(0);    }
+    }
+    #detail-panel.open { display: flex; }
+
+    #panel-header {
+      background: rgba(0,212,255,0.06);
+      border-bottom: 1px solid var(--panel-border);
+      padding: 12px 16px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    #panel-callsign {
+      font-size: 22px; font-weight: 700; color: var(--accent);
+      letter-spacing: 2px;
+    }
+    #panel-type {
+      font-size: 12px; color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace;
+    }
+    #panel-close {
+      cursor: pointer; color: var(--text-dim); font-size: 20px;
+      line-height: 1; transition: color .15s;
+    }
+    #panel-close:hover { color: var(--accent2); }
+
+    #panel-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+    /* Route display  FRA ──▶ JFK */
+    #panel-route {
+      display: flex; align-items: center; gap: 8px;
+      font-family: 'Share Tech Mono', monospace;
+      margin-bottom: 4px;
+    }
+    .route-ap {
+      font-size: 22px; font-weight: 700; color: var(--text);
+    }
+    .route-arrow {
+      color: var(--text-dim); font-size: 18px; flex: 1; text-align: center;
+    }
+
+    /* Data rows */
+    .data-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      padding-bottom: 6px;
+    }
+    .data-row:last-child { border-bottom: none; }
+    .data-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+    .data-value { font-family: 'Share Tech Mono', monospace; font-size: 13px; color: var(--text); }
+
+    /* Vertical rate indicator */
+    .vr-up   { color: var(--good); }
+    .vr-down { color: var(--accent2); }
+    .vr-lvl  { color: var(--text-dim); }
+
+    /* Trail toggle */
+    #trail-btn {
+      margin-top: 8px;
+      background: rgba(0,212,255,0.08);
+      border: 1px solid var(--accent);
+      color: var(--accent); padding: 7px;
+      border-radius: 4px; cursor: pointer;
+      font-family: inherit; font-size: 13px; font-weight: 600;
+      letter-spacing: 1px; transition: all .2s;
+    }
+    #trail-btn:hover { background: rgba(0,212,255,0.18); }
+    #trail-btn.active { background: var(--accent); color: var(--bg); }
+
+    /* ── Legend ───────────────────────────────────────────── */
+    #legend {
+      position: fixed; bottom: 22px; left: 14px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px; padding: 10px 14px; z-index: 900;
+      font-size: 11px; color: var(--text-dim); line-height: 1.8;
+      font-family: 'Share Tech Mono', monospace;
+    }
+    .leg-row { display: flex; align-items: center; gap: 8px; }
+    .leg-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    /* Leaflet dark overrides */
+    .leaflet-container { background: #0b0e14; }
+    .leaflet-control-zoom a {
+      background: var(--panel-bg) !important;
+      color: var(--text) !important;
+      border-color: var(--panel-border) !important;
+    }
+    .leaflet-control-attribution {
+      background: rgba(11,14,20,0.7) !important;
+      color: var(--text-dim) !important;
+    }
+    .leaflet-control-attribution a { color: var(--text-dim) !important; }
+  </style>
+</head>
+<body>
+
+<!-- ── Top navigation bar ─────────────────────────────────── -->
+<div id="header">
+  <h1>PLANE <span>TRACKER</span></h1>
+  <div id="source-badge">MOCK DATA</div>
+  <div id="plane-count">Tracking <b id="count">0</b> aircraft</div>
+  <button id="refresh-btn" onclick="loadPlanes()">↺ REFRESH</button>
+</div>
+
+<!-- ── Leaflet map container ──────────────────────────────── -->
+<div id="map"></div>
+
+<!-- ── Aircraft detail side-panel ────────────────────────── -->
+<div id="detail-panel">
+  <div id="panel-header">
+    <div>
+      <div id="panel-callsign">—</div>
+      <div id="panel-type">—</div>
+    </div>
+    <div id="panel-close" onclick="closePanel()">✕</div>
+  </div>
+  <div id="panel-body">
+    <div id="panel-route">
+      <span class="route-ap" id="p-origin">???</span>
+      <span class="route-arrow">──▶</span>
+      <span class="route-ap" id="p-dest">???</span>
+    </div>
+
+    <div class="data-row">
+      <span class="data-label">Tail / Reg</span>
+      <span class="data-value" id="p-tail">—</span>
+    </div>
+    <div class="data-row">
+      <span class="data-label">Operator</span>
+      <span class="data-value" id="p-operator">—</span>
+    </div>
+    <div class="data-row">
+      <span class="data-label">Altitude</span>
+      <span class="data-value" id="p-alt">—</span>
+    </div>
+    <div class="data-row">
+      <span class="data-label">Ground Speed</span>
+      <span class="data-value" id="p-speed">—</span>
+    </div>
+    <div class="data-row">
+      <span class="data-label">Heading</span>
+      <span class="data-value" id="p-heading">—</span>
+    </div>
+    <div class="data-row">
+      <span class="data-label">Vert. Rate</span>
+      <span class="data-value" id="p-vr">—</span>
+    </div>
+    <div class="data-row">
+      <span class="data-label">Squawk</span>
+      <span class="data-value" id="p-squawk">—</span>
+    </div>
+
+    <!-- Button to load & draw the flight path trail -->
+    <button id="trail-btn" onclick="toggleTrail()">SHOW FLIGHT PATH</button>
+  </div>
+</div>
+
+<!-- ── Bottom-left legend ─────────────────────────────────── -->
+<div id="legend">
+  <div class="leg-row"><div class="leg-dot" style="background:#39ff8a"></div> Climbing</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#00d4ff"></div> Level</div>
+  <div class="leg-row"><div class="leg-dot" style="background:#ff6b35"></div> Descending</div>
+</div>
+
+<!-- ── Leaflet JS ─────────────────────────────────────────── -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// ============================================================
+//  MAP INITIALISATION
+//  CartoDB Dark Matter tiles give the dark radar-screen look.
+// ============================================================
+const map = L.map('map', {
+  center: [51.0, 10.0],   // Central Europe
+  zoom: 2,
+  zoomControl: true,
+});
+
+L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    subdomains:  'abcd',
+    maxZoom:     19,
+  }
+).addTo(map);
+
+
+// ============================================================
+//  STATE  — keeps track of markers, the trail layer, and
+//           which plane is currently selected.
+// ============================================================
+let planeMarkers  = {};    // hex → Leaflet marker
+let trailLayer    = null;  // current polyline on map
+let selectedHex   = null;  // hex of selected plane
+let trailVisible  = false; // whether trail is drawn
+let planesData    = [];    // latest raw data from /api/planes
+
+
+// ============================================================
+//  PLANE ICON FACTORY
+//  Creates a rotated SVG arrow coloured by vertical rate.
+//    green  = climbing  (vr > 100)
+//    orange = descending(vr < -100)
+//    cyan   = level
+// ============================================================
+function makePlaneIcon(heading, verticalRate) {
+  const colour =
+    verticalRate >  100 ? '#39ff8a' :
+    verticalRate < -100 ? '#ff6b35' : '#00d4ff';
+
+  // Inline SVG plane silhouette rotated to current heading
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+      <g transform="rotate(${heading}, 14, 14)">
+        <!-- Body -->
+        <polygon points="14,2 17,22 14,19 11,22" fill="${colour}" opacity="0.95"/>
+        <!-- Wings -->
+        <polygon points="14,10 26,18 14,15 2,18" fill="${colour}" opacity="0.85"/>
+        <!-- Tail -->
+        <polygon points="14,18 19,26 14,24 9,26" fill="${colour}" opacity="0.75"/>
+        <!-- Glow dot at nose -->
+        <circle cx="14" cy="4" r="2" fill="white" opacity="0.6"/>
+      </g>
+    </svg>`;
+
+  return L.divIcon({
+    className: '',                          // no default leaflet styling
+    html: svg,
+    iconSize:   [28, 28],
+    iconAnchor: [14, 14],                   // anchor at centre of icon
+  });
+}
+
+
+// ============================================================
+//  LOAD PLANES
+//  Fetches /api/planes and refreshes markers on the map.
+// ============================================================
+async function loadPlanes() {
+  try {
+    const resp = await fetch('/api/planes');
+    const data = await resp.json();
+    planesData = data.planes;
+
+    // Update source badge
+    document.getElementById('source-badge').textContent =
+      data.source === 'real' ? 'LIVE ADS-B' : 'MOCK DATA';
+
+    // Update counter
+    document.getElementById('count').textContent = planesData.length;
+
+    // Track which hexes are in the new data
+    const freshHexes = new Set(planesData.map(p => p.hex));
+
+    // Remove stale markers (planes that left the view)
+    for (const hex of Object.keys(planeMarkers)) {
+      if (!freshHexes.has(hex)) {
+        map.removeLayer(planeMarkers[hex]);
+        delete planeMarkers[hex];
+      }
+    }
+
+    // Add or update markers
+    for (const plane of planesData) {
+      const icon = makePlaneIcon(plane.heading, plane.vertical);
+
+      if (planeMarkers[plane.hex]) {
+        // Update existing marker position and icon
+        planeMarkers[plane.hex]
+          .setLatLng([plane.lat, plane.lon])
+          .setIcon(icon);
+      } else {
+        // Create a new marker
+        const marker = L.marker([plane.lat, plane.lon], { icon })
+          .addTo(map)
+          .on('click', () => selectPlane(plane.hex));  // click handler
+
+        // Tooltip shows callsign on hover
+        marker.bindTooltip(
+          `<b style="color:#00d4ff">${plane.callsign || plane.tail}</b>
+           <br/>${plane.type} · ${plane.altitude.toLocaleString()} ft`,
+          { className: 'plane-tooltip', direction: 'top', offset: [0, -12] }
+        );
+
+        planeMarkers[plane.hex] = marker;
+      }
+    }
+
+    // If a plane was selected, refresh its trail if it's showing
+    if (selectedHex && trailVisible) drawTrail(selectedHex);
+
+  } catch (err) {
+    console.error('Failed to load planes:', err);
+  }
+}
+
+
+// ============================================================
+//  SELECT PLANE
+//  Opens the detail panel and populates it with plane info.
+// ============================================================
+function selectPlane(hex) {
+  selectedHex  = hex;
+  trailVisible = false;   // reset trail toggle for new selection
+
+  const plane = planesData.find(p => p.hex === hex);
+  if (!plane) return;
+
+  // Fill in all the fields
+  document.getElementById('panel-callsign').textContent = plane.callsign || 'N/A';
+  document.getElementById('panel-type').textContent     = `${plane.type} · ${plane.hex.toUpperCase()}`;
+  document.getElementById('p-origin').textContent       = plane.origin       || '???';
+  document.getElementById('p-dest').textContent         = plane.destination  || '???';
+  document.getElementById('p-tail').textContent         = plane.tail         || 'N/A';
+  document.getElementById('p-operator').textContent     = plane.operator     || 'Unknown';
+  document.getElementById('p-alt').textContent          = `${plane.altitude.toLocaleString()} ft`;
+  document.getElementById('p-speed').textContent        = `${plane.speed} kts`;
+  document.getElementById('p-heading').textContent      = `${plane.heading}°`;
+  document.getElementById('p-squawk').textContent       = plane.squawk || '—';
+
+  // Vertical rate with direction indicator
+  const vr      = plane.vertical;
+  const vrEl    = document.getElementById('p-vr');
+  const vrClass = vr >  100 ? 'vr-up' : vr < -100 ? 'vr-down' : 'vr-lvl';
+  const vrArrow = vr >  100 ? '▲' : vr < -100 ? '▼' : '→';
+  vrEl.textContent = `${vrArrow} ${Math.abs(vr)} fpm`;
+  vrEl.className   = `data-value ${vrClass}`;
+
+  // Reset trail button label
+  document.getElementById('trail-btn').textContent = 'SHOW FLIGHT PATH';
+  document.getElementById('trail-btn').classList.remove('active');
+
+  // Clear any previous trail
+  if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
+
+  // Show the panel
+  document.getElementById('detail-panel').classList.add('open');
+
+  // Pan the map to the selected plane
+  map.panTo([plane.lat, plane.lon], { animate: true, duration: 0.5 });
+}
+
+
+// ============================================================
+//  TRAIL (FLIGHT PATH)
+//  Fetches position history and draws a colour-graduated
+//  polyline. Older points are dimmer, newer ones brighter.
+// ============================================================
+async function drawTrail(hex) {
+  if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
+
+  try {
+    const resp  = await fetch(`/api/history/${hex}`);
+    const data  = await resp.json();
+    const trail = data.trail;
+
+    if (!trail || trail.length < 2) return;
+
+    // Draw gradient trail as multiple short segments
+    // Each segment gets slightly more opaque toward the current position
+    for (let i = 0; i < trail.length - 1; i++) {
+      const opacity = 0.15 + (i / trail.length) * 0.85;  // 0.15 → 1.0
+      const weight  = 1   + (i / trail.length) * 2.5;    // thin → thick
+
+      L.polyline(
+        [[trail[i].lat, trail[i].lon], [trail[i+1].lat, trail[i+1].lon]],
+        { color: '#00d4ff', weight, opacity, lineJoin: 'round' }
+      ).addTo(map);
+    }
+
+    // Mark the oldest known point with a small dot
+    L.circleMarker([trail[0].lat, trail[0].lon], {
+      radius: 4, color: '#00d4ff', fillColor: '#00d4ff',
+      fillOpacity: 0.3, weight: 1,
+    }).addTo(map).bindTooltip('Last known origin point');
+
+    // Store segments in a layer group so we can remove them easily
+    // (We re-query the map layers by flag instead for simplicity)
+    trailVisible = true;
+
+  } catch (err) {
+    console.error('Failed to load trail:', err);
+  }
+}
+
+
+// ============================================================
+//  TRAIL TOGGLE BUTTON
+// ============================================================
+function toggleTrail() {
+  const btn = document.getElementById('trail-btn');
+  if (!selectedHex) return;
+
+  if (!trailVisible) {
+    drawTrail(selectedHex);
+    btn.textContent = 'HIDE FLIGHT PATH';
+    btn.classList.add('active');
+    trailVisible = true;
+  } else {
+    // Clear trail segments from the map
+    map.eachLayer(layer => {
+      // Remove polylines and circle markers we drew (but not the tile layer)
+      if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) {
+        map.removeLayer(layer);
+      }
+    });
+    btn.textContent = 'SHOW FLIGHT PATH';
+    btn.classList.remove('active');
+    trailVisible = false;
+  }
+}
+
+
+// ============================================================
+//  CLOSE PANEL
+// ============================================================
+function closePanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  selectedHex = null;
+
+  // Also clear the trail
+  map.eachLayer(layer => {
+    if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) {
+      map.removeLayer(layer);
+    }
+  });
+  trailVisible = false;
+}
+
+
+// ============================================================
+//  AUTO-REFRESH
+//  Reloads plane positions every 15 seconds to simulate
+//  a live feed. Adjust the interval as needed.
+// ============================================================
+loadPlanes();                               // initial load
+setInterval(loadPlanes, 15_000);            // refresh every 15 s
+</script>
+
+</body>
+</html>
