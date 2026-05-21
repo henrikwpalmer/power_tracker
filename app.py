@@ -1,12 +1,15 @@
 """
 =============================================================
-  Billionaire Tracker — Flask Backend
-  Tracks a specific watchlist of planes by registration.
+  Plane Tracker — Flask Backend
+  - Live positions via ADS-B Exchange (RapidAPI)
+  - Last known position via OpenSky Network (free, no key needed)
+  - Watchlist loaded from CSV with columns:
+      Registration Code, Owner Name, Description, ICAO
 =============================================================
 """
 
 from flask import Flask, jsonify, render_template_string, request
-import math, time, random, urllib.request, json
+import urllib.request, urllib.parse, json, csv, os, time
 
 app = Flask(__name__)
 
@@ -14,17 +17,46 @@ app = Flask(__name__)
 #  CONFIGURATION
 # ─────────────────────────────────────────────────────────────
 USE_REAL_API  = True
-ADSB_API_KEY  = ""                  # ← paste API key here
+ADSB_API_KEY  = ""                  # ← paste your RapidAPI key here
 ADSB_BASE_URL = "https://adsbexchange-com1.p.rapidapi.com/v2"
 
-# ─────────────────────────────────────────────────────────────
-#  WATCHLIST — add or remove tail numbers here
-# ─────────────────────────────────────────────────────────────
-WATCHED_PLANES = ["N8628", "N3200X", "N620JK"]
+# OpenSky is free and requires no API key for anonymous access.
+# Rate limit: ~10 requests per 10 seconds for anonymous users.
+OPENSKY_BASE_URL = "https://opensky-network.org/api"
+
+CSV_PATH = "PrivateJetDirectory.csv"
 
 
 # ─────────────────────────────────────────────────────────────
-#  SHARED HEADERS — reused by every API call
+#  LOAD WATCHLIST FROM CSV
+#  Expects columns: Registration Code, Owner Name, Description, ICAO
+#  ICAO is the 6-character hex transponder address, e.g. "a835af"
+# ─────────────────────────────────────────────────────────────
+def load_watchlist():
+    watchlist = {}
+
+    if not os.path.exists(CSV_PATH):
+        print(f"  [csv] WARNING: {CSV_PATH} not found")
+        return watchlist
+
+    with open(CSV_PATH, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            reg = row.get("Registration Code", "").strip()
+            if reg:
+                watchlist[reg] = {
+                    "owner":       row.get("Owner Name",  "Unknown").strip(),
+                    "description": row.get("Description", "").strip(),
+                    # ICAO hex — lowercase, strip whitespace
+                    "icao":        row.get("ICAO", "").strip().lower(),
+                }
+
+    print(f"  [csv] Loaded {len(watchlist)} planes from {CSV_PATH}")
+    return watchlist
+
+
+# ─────────────────────────────────────────────────────────────
+#  SHARED ADSB HEADERS
 # ─────────────────────────────────────────────────────────────
 def adsb_headers():
     return {
@@ -34,35 +66,43 @@ def adsb_headers():
 
 
 # ─────────────────────────────────────────────────────────────
-#  FETCH WATCHLIST
-#  Loops over WATCHED_PLANES, queries each by registration,
-#  and returns a normalised list ready for the frontend.
+#  FETCH LIVE PLANES (ADS-B Exchange)
+#  Returns (found, missing) where missing entries include the
+#  ICAO hex so the frontend can request last-known positions.
 # ─────────────────────────────────────────────────────────────
-def fetch_watched_planes():
-    planes = []
+def fetch_watched_planes(watchlist):
+    found   = []
+    missing = []
 
-    for tail in WATCHED_PLANES:
-        url = f"{ADSB_BASE_URL}/registration/{tail}/"
+    for reg, meta in watchlist.items():
+        url = f"{ADSB_BASE_URL}/registration/{reg}/"
         req = urllib.request.Request(url, headers=adsb_headers())
 
         try:
             with urllib.request.urlopen(req, timeout=8) as resp:
                 raw = json.loads(resp.read())
 
-            # The API returns a list under "ac" — take the first match
             ac_list = raw.get("ac", [])
+
             if not ac_list:
-                print(f"  [watchlist] No data returned for {tail}")
+                print(f"  [watchlist] {reg} ({meta['owner']}) — no signal")
+                missing.append({
+                    "tail":        reg,
+                    "owner":       meta["owner"],
+                    "description": meta["description"],
+                    "icao":        meta["icao"],
+                })
                 continue
 
             ac = ac_list[0]
-
-            # Normalise fields into the same shape the frontend expects
-            planes.append({
+            found.append({
                 "hex":         ac.get("hex", ""),
-                "tail":        ac.get("r", tail),           # registration
+                "tail":        ac.get("r", reg),
                 "callsign":    ac.get("flight", "").strip(),
-                "operator":    ac.get("ownOp", "Unknown"),
+                "owner":       meta["owner"],
+                "description": meta["description"],
+                "icao":        meta["icao"],
+                "operator":    ac.get("ownOp", meta["owner"]),
                 "type":        ac.get("t", "Unknown"),
                 "origin":      ac.get("orig", "?"),
                 "destination": ac.get("dest", "?"),
@@ -74,20 +114,109 @@ def fetch_watched_planes():
                 "vertical":    ac.get("baro_rate", 0),
                 "squawk":      ac.get("squawk", ""),
             })
-            print(f"  [watchlist] {tail} → found at {ac.get('lat')}, {ac.get('lon')}")
+            print(f"  [watchlist] {reg} ({meta['owner']}) → {ac.get('lat')}, {ac.get('lon')}")
 
         except Exception as e:
-            # Don't crash if one plane is unavailable — just skip it
-            print(f"  [watchlist] Failed to fetch {tail}: {e}")
-            continue
+            print(f"  [watchlist] {reg} ({meta['owner']}) — error: {e}")
+            missing.append({
+                "tail":        reg,
+                "owner":       meta["owner"],
+                "description": meta["description"],
+                "icao":        meta["icao"],
+            })
 
-    return planes
+    return found, missing
 
 
 # ─────────────────────────────────────────────────────────────
-#  FETCH HISTORY
-#  Pulls the recent trail for a single plane by hex ID.
-#  ADS-B Exchange includes trail data in the /hex/ endpoint.
+#  FETCH LAST KNOWN POSITION (OpenSky Network)
+#
+#  OpenSky's /states/all endpoint accepts an ICAO hex and
+#  returns the most recent state vector it has on record —
+#  even if the plane landed hours or days ago. This is the
+#  "last seen" snapshot, not a live position.
+#
+#  Endpoint: GET /states/all?icao24={hex}
+#  Returns:  list of state vectors, each with:
+#    [icao24, callsign, origin_country, time_position,
+#     last_contact, longitude, latitude, baro_altitude,
+#     on_ground, velocity, true_track, vertical_rate,
+#     sensors, geo_altitude, squawk, spi, position_source]
+#
+#  Anonymous rate limit: ~10 req / 10 s. We cache results for
+#  60 seconds to avoid hammering the API on map refreshes.
+# ─────────────────────────────────────────────────────────────
+
+# Simple in-memory cache: { icao: { "ts": unix_time, "data": {...} } }
+_opensky_cache = {}
+CACHE_TTL = 60  # seconds
+
+
+def fetch_last_known_position(icao_hex):
+    """
+    Query OpenSky for the last recorded state vector for one aircraft.
+    Returns a dict with lat, lon, altitude, heading, speed, timestamp,
+    or None if nothing is found.
+    """
+    if not icao_hex:
+        return None
+
+    # Return cached result if fresh enough
+    cached = _opensky_cache.get(icao_hex)
+    if cached and (time.time() - cached["ts"]) < CACHE_TTL:
+        return cached["data"]
+
+    url = f"{OPENSKY_BASE_URL}/states/all?icao24={icao_hex.lower()}"
+    req = urllib.request.Request(url, headers={"User-Agent": "PlaneTracker/1.0"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = json.loads(resp.read())
+    except Exception as e:
+        print(f"  [opensky] Failed for {icao_hex}: {e}")
+        return None
+
+    states = raw.get("states")
+    if not states:
+        print(f"  [opensky] No state vector found for {icao_hex}")
+        return None
+
+    # State vector field indices (per OpenSky docs)
+    sv = states[0]
+    lat         = sv[6]   # latitude
+    lon         = sv[5]   # longitude
+    baro_alt    = sv[7]   # barometric altitude in metres (None if unknown)
+    on_ground   = sv[8]   # boolean
+    speed       = sv[9]   # m/s
+    heading     = sv[10]  # degrees
+    last_contact= sv[4]   # unix timestamp of last ADS-B message
+
+    if lat is None or lon is None:
+        return None
+
+    # Convert metres → feet for consistency with the rest of the app
+    alt_ft = round(baro_alt * 3.28084) if baro_alt else 0
+    # Convert m/s → knots
+    speed_kts = round(speed * 1.94384) if speed else 0
+
+    result = {
+        "icao":         icao_hex,
+        "lat":          lat,
+        "lon":          lon,
+        "altitude":     alt_ft,
+        "speed":        speed_kts,
+        "heading":      round(heading) if heading else 0,
+        "on_ground":    on_ground,
+        "last_contact": last_contact,  # unix timestamp
+    }
+
+    # Cache it
+    _opensky_cache[icao_hex] = {"ts": time.time(), "data": result}
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+#  FETCH FLIGHT HISTORY (ADS-B Exchange)
 # ─────────────────────────────────────────────────────────────
 def fetch_real_history(hex_code):
     url = f"{ADSB_BASE_URL}/hex/{hex_code}/"
@@ -117,7 +246,6 @@ def fetch_real_history(hex_code):
 
 @app.route("/")
 def index():
-    """Serve the single-page frontend."""
     with open("index.html", "r", encoding="utf-8") as f:
         return render_template_string(f.read())
 
@@ -126,28 +254,46 @@ def index():
 def api_planes():
     """
     GET /api/planes
-    Returns positions for every plane in WATCHED_PLANES.
+    Returns:
+      planes   — aircraft with live ADS-B positions
+      missing  — aircraft not currently transmitting (includes icao for last-known lookup)
     """
-    planes = fetch_watched_planes()
-    return jsonify({"planes": planes, "source": "real"})
+    watchlist      = load_watchlist()
+    found, missing = fetch_watched_planes(watchlist)
+    return jsonify({"planes": found, "missing": missing, "source": "real"})
 
 
 @app.route("/api/history/<hex_code>")
 def api_history(hex_code):
-    """
-    GET /api/history/<hex>
-    Returns position trail for one aircraft.
-    """
+    """GET /api/history/<hex> — recent ADS-B trail from ADS-B Exchange."""
     trail = fetch_real_history(hex_code)
     return jsonify({"hex": hex_code, "trail": trail})
+
+
+@app.route("/api/last_known/<icao_hex>")
+def api_last_known(icao_hex):
+    """
+    GET /api/last_known/<icao>
+    Returns the most recent state vector OpenSky has for this aircraft.
+    Used to show a grey "last seen" pin for grounded/offline planes.
+    """
+    position = fetch_last_known_position(icao_hex)
+    if position:
+        return jsonify({"found": True,  "position": position})
+    else:
+        return jsonify({"found": False, "position": None})
 
 
 # ─────────────────────────────────────────────────────────────
 #  ENTRY POINT
 # ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    wl = load_watchlist()
     print("=" * 55)
-    print("  Billionaire Tracker — running at http://127.0.0.1:5000")
-    print(f"  Watching : {', '.join(WATCHED_PLANES)}")
+    print("  Plane Tracker — running at http://127.0.0.1:5000")
+    print(f"  Watching {len(wl)} planes from {CSV_PATH}")
+    for reg, meta in wl.items():
+        icao_str = f"  ICAO: {meta['icao']}" if meta['icao'] else "  ICAO: not set"
+        print(f"    {reg:12}  {meta['owner']:20} {icao_str}")
     print("=" * 55)
     app.run(debug=True, host="0.0.0.0", port=5000)

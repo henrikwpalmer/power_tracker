@@ -3,393 +3,614 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Billionaire Tracker</title>
+  <title>Plane Tracker</title>
 
-  <!-- Leaflet CSS — the mapping library -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Google Font — Rajdhani for the aviation/tech feel -->
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
 
   <style>
-    /* ── Reset & base ─────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:          #0b0e14;
-      --panel-bg:    #0f1319;
-      --panel-border:#1e2530;
-      --accent:      #00d4ff;
-      --accent2:     #ff6b35;
-      --text:        #c8d8e8;
-      --text-dim:    #5a7080;
-      --trail:       #00d4ff;
-      --good:        #39ff8a;
-      --warn:        #ffd700;
+      --bg:           #0b0e14;
+      --panel-bg:     #0f1319;
+      --panel-border: #1e2530;
+      --accent:       #00d4ff;
+      --accent2:      #ff6b35;
+      --text:         #c8d8e8;
+      --text-dim:     #5a7080;
+      --good:         #39ff8a;
+      --sidebar-w:    260px;
     }
 
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Rajdhani', sans-serif;
-      font-size: 15px;
-      overflow: hidden;
-    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; font-size: 15px; overflow: hidden; }
 
-    /* ── Header bar ───────────────────────────────────────── */
+    /* ── Header ───────────────────────────────────────────── */
     #header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-      height: 48px;
-      background: rgba(11,14,20,0.95);
+      height: 48px; background: rgba(11,14,20,0.95);
       border-bottom: 1px solid var(--panel-border);
-      display: flex; align-items: center; gap: 18px;
-      padding: 0 20px;
-      backdrop-filter: blur(8px);
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 20px; backdrop-filter: blur(8px);
     }
-    #header h1 {
-      font-size: 20px; font-weight: 700; letter-spacing: 3px;
-      color: var(--accent); text-transform: uppercase;
-    }
+    #header h1 { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; }
     #header h1 span { color: var(--text-dim); font-weight: 400; }
-
-    /* Live / mock badge */
     #source-badge {
       font-size: 10px; font-family: 'Share Tech Mono', monospace;
       padding: 3px 8px; border-radius: 3px; letter-spacing: 1px;
-      background: rgba(255,107,53,0.15); color: var(--accent2);
-      border: 1px solid var(--accent2);
+      background: rgba(255,107,53,0.15); color: var(--accent2); border: 1px solid var(--accent2);
     }
 
-    /* Plane count */
-    #plane-count {
-      margin-left: auto;
-      font-family: 'Share Tech Mono', monospace;
+    /* ── Last-known toggle in header ─────────────────────── */
+    #last-known-toggle {
+      display: flex; align-items: center; gap: 8px;
       font-size: 12px; color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace; letter-spacing: 1px;
+      cursor: pointer; user-select: none;
+      padding: 4px 10px;
+      border: 1px solid var(--panel-border);
+      border-radius: 4px;
+      transition: border-color .2s, color .2s;
     }
-    #plane-count b { color: var(--accent); font-size: 16px; }
+    #last-known-toggle:hover { border-color: #7a8a9a; color: var(--text); }
+    #last-known-toggle.active { border-color: #7a8a9a; color: #a0b8c8; }
 
-    /* Refresh button */
+    /* Custom checkbox dot */
+    #lk-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #3a4a5a; border: 1px solid #5a7080;
+      transition: background .2s, border-color .2s;
+      flex-shrink: 0;
+    }
+    #last-known-toggle.active #lk-dot { background: #8a9aaa; border-color: #a0b8c8; }
+
+    #plane-count { margin-left: auto; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-dim); }
+    #plane-count b { color: var(--accent); font-size: 16px; }
     #refresh-btn {
-      background: none; border: 1px solid var(--panel-border);
-      color: var(--text-dim); padding: 4px 12px; border-radius: 4px;
-      cursor: pointer; font-family: inherit; font-size: 12px;
-      letter-spacing: 1px; transition: all .2s;
+      background: none; border: 1px solid var(--panel-border); color: var(--text-dim);
+      padding: 4px 12px; border-radius: 4px; cursor: pointer;
+      font-family: inherit; font-size: 12px; letter-spacing: 1px; transition: all .2s;
     }
     #refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* ── Map fills remaining space ────────────────────────── */
-    #map {
-      position: fixed;
-      top: 48px; bottom: 0; left: 0; right: 0;
-    }
+    /* ── Shell ─────────────────────────────────────────────── */
+    #shell { position: fixed; top: 48px; bottom: 0; left: 0; right: 0; display: flex; }
 
-    /* ── Detail panel ─────────────────────────────────────── */
+    /* ── Sidebar ───────────────────────────────────────────── */
+    #sidebar {
+      width: var(--sidebar-w); flex-shrink: 0;
+      background: var(--panel-bg); border-right: 1px solid var(--panel-border);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .sb-section-title {
+      padding: 10px 14px 6px; font-size: 10px; letter-spacing: 2px;
+      text-transform: uppercase; color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace;
+      border-bottom: 1px solid var(--panel-border); flex-shrink: 0;
+    }
+    .sb-list { overflow-y: auto; flex-shrink: 0; }
+    .sb-list::-webkit-scrollbar { width: 4px; }
+    .sb-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 2px; }
+
+    .sb-row {
+      padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,0.04);
+      cursor: pointer; transition: background .15s;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .sb-row:hover { background: rgba(0,212,255,0.06); }
+    .sb-row.active { background: rgba(0,212,255,0.1); border-left: 2px solid var(--accent); }
+    .sb-owner { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sb-reg { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--accent); }
+    .sb-desc { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Missing section */
+    #sb-missing-section { flex-shrink: 0; }
+    .sb-row.missing { cursor: default; opacity: 0.55; }
+    .sb-row.missing:hover { background: none; }
+    /* Missing rows that have a last-known position become clickable */
+    .sb-row.missing.has-lastknown { cursor: pointer; opacity: 0.75; }
+    .sb-row.missing.has-lastknown:hover { background: rgba(160,184,200,0.06); }
+    .sb-missing-badge { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: var(--accent2); letter-spacing: 1px; }
+    .sb-lastknown-badge { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: #8a9aaa; letter-spacing: 1px; margin-left: 4px; }
+
+    #sb-spacer { flex: 1; min-height: 8px; }
+
+    /* ── Map ───────────────────────────────────────────────── */
+    #map { flex: 1; position: relative; }
+
+    /* ── Detail panel ──────────────────────────────────────── */
     #detail-panel {
-      position: fixed;
-      top: 60px; right: 12px;
-      width: 300px;
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
-      border-radius: 6px;
-      z-index: 900;
-      display: none;         /* hidden until a plane is clicked */
-      flex-direction: column;
-      overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      position: absolute; top: 12px; right: 12px; width: 300px;
+      background: var(--panel-bg); border: 1px solid var(--panel-border);
+      border-radius: 6px; z-index: 900; display: none; flex-direction: column;
+      overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.6);
       animation: slideIn .2s ease;
     }
-    @keyframes slideIn {
-      from { opacity:0; transform: translateX(16px); }
-      to   { opacity:1; transform: translateX(0);    }
-    }
+    @keyframes slideIn { from { opacity:0; transform: translateX(16px); } to { opacity:1; transform: translateX(0); } }
     #detail-panel.open { display: flex; }
 
     #panel-header {
-      background: rgba(0,212,255,0.06);
-      border-bottom: 1px solid var(--panel-border);
-      padding: 12px 16px;
-      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(0,212,255,0.06); border-bottom: 1px solid var(--panel-border);
+      padding: 12px 16px; display: flex; align-items: flex-start; justify-content: space-between;
     }
-    #panel-callsign {
-      font-size: 22px; font-weight: 700; color: var(--accent);
-      letter-spacing: 2px;
-    }
-    #panel-type {
-      font-size: 12px; color: var(--text-dim);
-      font-family: 'Share Tech Mono', monospace;
-    }
-    #panel-close {
-      cursor: pointer; color: var(--text-dim); font-size: 20px;
-      line-height: 1; transition: color .15s;
-    }
+
+    /* Grey header variant for last-known panels */
+    #panel-header.lastknown-header { background: rgba(120,140,160,0.08); }
+
+    #panel-callsign { font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 2px; }
+    #panel-callsign.lastknown { color: #8a9aaa; }
+    #panel-type { font-size: 12px; color: var(--text-dim); font-family: 'Share Tech Mono', monospace; }
+    #panel-close { cursor: pointer; color: var(--text-dim); font-size: 20px; line-height: 1; transition: color .15s; }
     #panel-close:hover { color: var(--accent2); }
 
     #panel-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 
-    /* Route display  FRA ──▶ JFK */
-    #panel-route {
-      display: flex; align-items: center; gap: 8px;
-      font-family: 'Share Tech Mono', monospace;
-      margin-bottom: 4px;
-    }
-    .route-ap {
-      font-size: 22px; font-weight: 700; color: var(--text);
-    }
-    .route-arrow {
-      color: var(--text-dim); font-size: 18px; flex: 1; text-align: center;
+    /* Last-known notice banner */
+    #panel-lastknown-notice {
+      display: none;
+      background: rgba(120,140,160,0.1); border: 1px solid #3a4a5a;
+      border-radius: 4px; padding: 7px 10px;
+      font-size: 11px; color: #8a9aaa;
+      font-family: 'Share Tech Mono', monospace; letter-spacing: 0.5px;
     }
 
-    /* Data rows */
-    .data-row {
-      display: flex; justify-content: space-between; align-items: baseline;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-      padding-bottom: 6px;
+    #panel-owner-box {
+      background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.2);
+      border-radius: 4px; padding: 8px 10px; margin-bottom: 4px;
     }
+    #panel-owner-box.lastknown { background: rgba(120,140,160,0.05); border-color: rgba(120,140,160,0.2); }
+    #panel-owner-name { font-size: 16px; font-weight: 700; color: var(--text); }
+    #panel-owner-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+
+    #panel-route { display: flex; align-items: center; gap: 8px; font-family: 'Share Tech Mono', monospace; margin-bottom: 2px; }
+    .route-ap { font-size: 22px; font-weight: 700; color: var(--text); }
+    .route-arrow { color: var(--text-dim); font-size: 18px; flex: 1; text-align: center; }
+
+    .data-row { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,0.04); padding-bottom: 6px; }
     .data-row:last-child { border-bottom: none; }
     .data-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
     .data-value { font-family: 'Share Tech Mono', monospace; font-size: 13px; color: var(--text); }
-
-    /* Vertical rate indicator */
     .vr-up   { color: var(--good); }
     .vr-down { color: var(--accent2); }
     .vr-lvl  { color: var(--text-dim); }
 
-    /* Trail toggle */
     #trail-btn {
-      margin-top: 8px;
-      background: rgba(0,212,255,0.08);
-      border: 1px solid var(--accent);
-      color: var(--accent); padding: 7px;
-      border-radius: 4px; cursor: pointer;
-      font-family: inherit; font-size: 13px; font-weight: 600;
-      letter-spacing: 1px; transition: all .2s;
+      margin-top: 8px; background: rgba(0,212,255,0.08);
+      border: 1px solid var(--accent); color: var(--accent); padding: 7px;
+      border-radius: 4px; cursor: pointer; font-family: inherit;
+      font-size: 13px; font-weight: 600; letter-spacing: 1px; transition: all .2s;
     }
     #trail-btn:hover { background: rgba(0,212,255,0.18); }
     #trail-btn.active { background: var(--accent); color: var(--bg); }
 
-    /* ── Legend ───────────────────────────────────────────── */
+    /* ── Legend ────────────────────────────────────────────── */
     #legend {
-      position: fixed; bottom: 22px; left: 14px;
-      background: var(--panel-bg);
-      border: 1px solid var(--panel-border);
+      position: absolute; bottom: 22px; left: 14px;
+      background: var(--panel-bg); border: 1px solid var(--panel-border);
       border-radius: 6px; padding: 10px 14px; z-index: 900;
-      font-size: 11px; color: var(--text-dim); line-height: 1.8;
+      font-size: 11px; color: var(--text-dim); line-height: 2;
       font-family: 'Share Tech Mono', monospace;
     }
     .leg-row { display: flex; align-items: center; gap: 8px; }
     .leg-dot { width: 10px; height: 10px; border-radius: 50%; }
 
-    /* Leaflet dark overrides */
+    /* Leaflet overrides */
     .leaflet-container { background: #0b0e14; }
-    .leaflet-control-zoom a {
-      background: var(--panel-bg) !important;
-      color: var(--text) !important;
-      border-color: var(--panel-border) !important;
-    }
-    .leaflet-control-attribution {
-      background: rgba(11,14,20,0.7) !important;
-      color: var(--text-dim) !important;
-    }
+    .leaflet-control-zoom a { background: var(--panel-bg) !important; color: var(--text) !important; border-color: var(--panel-border) !important; }
+    .leaflet-control-attribution { background: rgba(11,14,20,0.7) !important; color: var(--text-dim) !important; }
     .leaflet-control-attribution a { color: var(--text-dim) !important; }
   </style>
 </head>
 <body>
 
-<!-- ── Top navigation bar ─────────────────────────────────── -->
+<!-- ── Header ──────────────────────────────────────────────── -->
 <div id="header">
   <h1>PLANE <span>TRACKER</span></h1>
-  <div id="source-badge">MOCK DATA</div>
+  <div id="source-badge">LIVE ADS-B</div>
+
+  <!-- Toggle for last-known positions -->
+  <div id="last-known-toggle" onclick="toggleLastKnown()" title="Show last known location of grounded/offline planes">
+    <div id="lk-dot"></div>
+    LAST KNOWN
+  </div>
+
   <div id="plane-count">Tracking <b id="count">0</b> aircraft</div>
   <button id="refresh-btn" onclick="loadPlanes()">↺ REFRESH</button>
 </div>
 
-<!-- ── Leaflet map container ──────────────────────────────── -->
-<div id="map"></div>
+<!-- ── Shell ───────────────────────────────────────────────── -->
+<div id="shell">
 
-<!-- ── Aircraft detail side-panel ────────────────────────── -->
-<div id="detail-panel">
-  <div id="panel-header">
-    <div>
-      <div id="panel-callsign">—</div>
-      <div id="panel-type">—</div>
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sb-section-title">● AIRBORNE</div>
+    <div class="sb-list" id="sb-found-list"></div>
+    <div id="sb-spacer"></div>
+    <div id="sb-missing-section">
+      <div class="sb-section-title">○ NOT DETECTED</div>
+      <div class="sb-list" id="sb-missing-list"></div>
     </div>
-    <div id="panel-close" onclick="closePanel()">✕</div>
   </div>
-  <div id="panel-body">
-    <div id="panel-route">
-      <span class="route-ap" id="p-origin">???</span>
-      <span class="route-arrow">──▶</span>
-      <span class="route-ap" id="p-dest">???</span>
+
+  <!-- Map -->
+  <div id="map">
+
+    <!-- Detail panel -->
+    <div id="detail-panel">
+      <div id="panel-header">
+        <div>
+          <div id="panel-callsign">—</div>
+          <div id="panel-type">—</div>
+        </div>
+        <div id="panel-close" onclick="closePanel()">✕</div>
+      </div>
+      <div id="panel-body">
+        <!-- Last-known notice (only shown for grey pins) -->
+        <div id="panel-lastknown-notice"></div>
+
+        <div id="panel-owner-box">
+          <div id="panel-owner-name">—</div>
+          <div id="panel-owner-desc">—</div>
+        </div>
+
+        <div id="panel-route">
+          <span class="route-ap" id="p-origin">???</span>
+          <span class="route-arrow">──▶</span>
+          <span class="route-ap" id="p-dest">???</span>
+        </div>
+
+        <div class="data-row">
+          <span class="data-label">Tail / Reg</span>
+          <span class="data-value" id="p-tail">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Aircraft Type</span>
+          <span class="data-value" id="p-atype">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Altitude</span>
+          <span class="data-value" id="p-alt">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Ground Speed</span>
+          <span class="data-value" id="p-speed">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Heading</span>
+          <span class="data-value" id="p-heading">—</span>
+        </div>
+        <div class="data-row" id="row-vr">
+          <span class="data-label">Vert. Rate</span>
+          <span class="data-value" id="p-vr">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Squawk</span>
+          <span class="data-value" id="p-squawk">—</span>
+        </div>
+
+        <button id="trail-btn" onclick="toggleTrail()">SHOW FLIGHT PATH</button>
+      </div>
     </div>
 
-    <div class="data-row">
-      <span class="data-label">Tail / Reg</span>
-      <span class="data-value" id="p-tail">—</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Operator</span>
-      <span class="data-value" id="p-operator">—</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Altitude</span>
-      <span class="data-value" id="p-alt">—</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Ground Speed</span>
-      <span class="data-value" id="p-speed">—</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Heading</span>
-      <span class="data-value" id="p-heading">—</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Vert. Rate</span>
-      <span class="data-value" id="p-vr">—</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Squawk</span>
-      <span class="data-value" id="p-squawk">—</span>
+    <!-- Legend -->
+    <div id="legend">
+      <div class="leg-row"><div class="leg-dot" style="background:#39ff8a"></div> Climbing</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#00d4ff"></div> Level flight</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#ff6b35"></div> Descending</div>
+      <div class="leg-row"><div class="leg-dot" style="background:#6a7a8a;border:1px solid #8a9aaa"></div> Last known pos.</div>
     </div>
 
-    <!-- Button to load & draw the flight path trail -->
-    <button id="trail-btn" onclick="toggleTrail()">SHOW FLIGHT PATH</button>
-  </div>
-</div>
+  </div><!-- /#map -->
+</div><!-- /#shell -->
 
-<!-- ── Bottom-left legend ─────────────────────────────────── -->
-<div id="legend">
-  <div class="leg-row"><div class="leg-dot" style="background:#39ff8a"></div> Climbing</div>
-  <div class="leg-row"><div class="leg-dot" style="background:#00d4ff"></div> Level</div>
-  <div class="leg-row"><div class="leg-dot" style="background:#ff6b35"></div> Descending</div>
-</div>
-
-<!-- ── Leaflet JS ─────────────────────────────────────────── -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
 // ============================================================
-//  MAP INITIALISATION
-//  CartoDB Dark Matter tiles give the dark radar-screen look.
+//  MAP INIT
 // ============================================================
-const map = L.map('map', {
-  center: [51.0, 10.0],   // Central Europe
-  zoom: 2,
-  zoomControl: true,
-});
-
+const map = L.map('map', { center: [30.0, -40.0], zoom: 3 });
 L.tileLayer(
   'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  {
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    subdomains:  'abcd',
-    maxZoom:     19,
-  }
+  { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 19 }
 ).addTo(map);
 
 
 // ============================================================
-//  STATE  — keeps track of markers, the trail layer, and
-//           which plane is currently selected.
+//  STATE
 // ============================================================
-let planeMarkers  = {};    // hex → Leaflet marker
-let trailLayer    = null;  // current polyline on map
-let selectedHex   = null;  // hex of selected plane
-let trailVisible  = false; // whether trail is drawn
-let planesData    = [];    // latest raw data from /api/planes
+let planeMarkers     = {};   // hex → Leaflet marker  (live, coloured)
+let lastKnownMarkers = {};   // icao → Leaflet marker (grey, last-seen)
+let trailVisible     = false;
+let selectedHex      = null;
+let selectedIcao     = null; // set when a last-known pin is selected
+let planesData       = [];
+let missingData      = [];
+let showLastKnown    = false; // controlled by the header toggle
 
 
 // ============================================================
-//  PLANE ICON FACTORY
-//  Creates a rotated SVG arrow coloured by vertical rate.
-//    green  = climbing  (vr > 100)
-//    orange = descending(vr < -100)
-//    cyan   = level
+//  PLANE ICON — coloured, for live planes
 // ============================================================
 function makePlaneIcon(heading, verticalRate) {
   const colour =
     verticalRate >  100 ? '#39ff8a' :
     verticalRate < -100 ? '#ff6b35' : '#00d4ff';
 
-  // Inline SVG plane silhouette rotated to current heading
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
       <g transform="rotate(${heading}, 14, 14)">
-        <!-- Body -->
         <polygon points="14,2 17,22 14,19 11,22" fill="${colour}" opacity="0.95"/>
-        <!-- Wings -->
-        <polygon points="14,10 26,18 14,15 2,18" fill="${colour}" opacity="0.85"/>
-        <!-- Tail -->
-        <polygon points="14,18 19,26 14,24 9,26" fill="${colour}" opacity="0.75"/>
-        <!-- Glow dot at nose -->
+        <polygon points="14,10 26,18 14,15 2,18"  fill="${colour}" opacity="0.85"/>
+        <polygon points="14,18 19,26 14,24 9,26"  fill="${colour}" opacity="0.75"/>
         <circle cx="14" cy="4" r="2" fill="white" opacity="0.6"/>
       </g>
     </svg>`;
+  return L.divIcon({ className: '', html: svg, iconSize: [28,28], iconAnchor: [14,14] });
+}
 
-  return L.divIcon({
-    className: '',                          // no default leaflet styling
-    html: svg,
-    iconSize:   [28, 28],
-    iconAnchor: [14, 14],                   // anchor at centre of icon
-  });
+// ============================================================
+//  LAST-KNOWN ICON — muted grey, for grounded/offline planes
+//  Uses a simpler dot + direction tick so it's visually
+//  distinct from the live coloured icons.
+// ============================================================
+function makeLastKnownIcon(heading) {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+      <g transform="rotate(${heading}, 12, 12)">
+        <polygon points="12,2 14,18 12,16 10,18" fill="#6a7a8a" opacity="0.9"/>
+        <polygon points="12,9 21,15 12,13 3,15"  fill="#6a7a8a" opacity="0.75"/>
+        <polygon points="12,15 16,22 12,20 8,22" fill="#6a7a8a" opacity="0.6"/>
+        <circle cx="12" cy="12" r="3" fill="none" stroke="#8a9aaa" stroke-width="1" opacity="0.7"/>
+      </g>
+    </svg>`;
+  return L.divIcon({ className: '', html: svg, iconSize: [24,24], iconAnchor: [12,12] });
 }
 
 
 // ============================================================
-//  LOAD PLANES
-//  Fetches /api/planes and refreshes markers on the map.
+//  TOGGLE — show/hide last-known positions
+// ============================================================
+function toggleLastKnown() {
+  showLastKnown = !showLastKnown;
+  const toggle = document.getElementById('last-known-toggle');
+  toggle.classList.toggle('active', showLastKnown);
+
+  if (showLastKnown) {
+    // Load last-known positions for all missing planes that have an ICAO
+    loadAllLastKnown();
+  } else {
+    // Remove all grey markers from the map
+    clearLastKnownMarkers();
+  }
+}
+
+// Remove every grey marker
+function clearLastKnownMarkers() {
+  for (const icao of Object.keys(lastKnownMarkers)) {
+    map.removeLayer(lastKnownMarkers[icao]);
+  }
+  lastKnownMarkers = {};
+}
+
+// Fetch and place last-known pins for all missing planes
+async function loadAllLastKnown() {
+  for (const plane of missingData) {
+    if (!plane.icao) continue;
+    await loadLastKnownForPlane(plane);
+  }
+}
+
+// Fetch last-known for one plane and place the grey marker
+async function loadLastKnownForPlane(plane) {
+  if (!plane.icao || lastKnownMarkers[plane.icao]) return; // already loaded
+
+  try {
+    const resp = await fetch(`/api/last_known/${plane.icao}`);
+    const data = await resp.json();
+
+    if (!data.found || !data.position) return;
+
+    const pos    = data.position;
+    const icon   = makeLastKnownIcon(pos.heading || 0);
+    const marker = L.marker([pos.lat, pos.lon], { icon, zIndexOffset: -100 })
+      .addTo(map);
+
+    // Format the last-contact timestamp into a readable string
+    const lastSeen = pos.last_contact
+      ? new Date(pos.last_contact * 1000).toUTCString()
+      : 'Unknown';
+
+    // Tooltip on hover
+    marker.bindTooltip(
+      `<b style="color:#8a9aaa">${plane.owner}</b> <span style="color:#5a7080">(last known)</span>
+       <br/>${plane.tail} · ${pos.on_ground ? 'On ground' : 'Airborne'}
+       <br/><span style="color:#5a7080;font-size:10px">${lastSeen}</span>`,
+      { direction: 'top', offset: [0, -12] }
+    );
+
+    // Click opens a "last known" variant of the detail panel
+    marker.on('click', () => openLastKnownPanel(plane, pos, lastSeen));
+
+    lastKnownMarkers[plane.icao] = marker;
+
+    // Update sidebar row to show the grey badge and become clickable
+    updateMissingSidebarRow(plane, pos, lastSeen);
+
+  } catch (err) {
+    console.error(`[last_known] Failed for ${plane.icao}:`, err);
+  }
+}
+
+// Update a missing sidebar row once last-known data arrives
+function updateMissingSidebarRow(plane, pos, lastSeen) {
+  const rowId = `sb-missing-${plane.tail.replace(/\W/g, '')}`;
+  const row   = document.getElementById(rowId);
+  if (!row) return;
+
+  row.classList.add('has-lastknown');
+
+  // Add grey badge next to NO SIGNAL
+  const regEl = row.querySelector('.sb-reg');
+  if (regEl && !regEl.querySelector('.sb-lastknown-badge')) {
+    const badge = document.createElement('span');
+    badge.className = 'sb-lastknown-badge';
+    badge.textContent = '· LAST KNOWN';
+    regEl.appendChild(badge);
+  }
+
+  // Make it pan to the grey pin on click
+  row.onclick = () => {
+    map.panTo([pos.lat, pos.lon], { animate: true, duration: 0.5 });
+    openLastKnownPanel(plane, pos, lastSeen);
+  };
+}
+
+
+// ============================================================
+//  OPEN LAST-KNOWN PANEL
+//  A read-only variant of the detail panel; no trail button.
+// ============================================================
+function openLastKnownPanel(plane, pos, lastSeen) {
+  selectedHex  = null;
+  selectedIcao = plane.icao;
+  clearTrailLayers();
+
+  // Style panel header in grey
+  document.getElementById('panel-header').className     = 'lastknown-header';
+  document.getElementById('panel-callsign').textContent = plane.tail;
+  document.getElementById('panel-callsign').className   = 'lastknown';
+  document.getElementById('panel-type').textContent     = `ICAO: ${plane.icao.toUpperCase()}`;
+
+  // Show last-known notice
+  const notice = document.getElementById('panel-lastknown-notice');
+  notice.style.display = 'block';
+  notice.textContent   = `⊙ LAST KNOWN  ·  ${lastSeen}`;
+
+  // Owner box in grey
+  document.getElementById('panel-owner-box').className  = 'lastknown';
+  document.getElementById('panel-owner-name').textContent = plane.owner       || '—';
+  document.getElementById('panel-owner-desc').textContent = plane.description || '—';
+
+  // Route unknown for last-known
+  document.getElementById('p-origin').textContent = '???';
+  document.getElementById('p-dest').textContent   = '???';
+
+  document.getElementById('p-tail').textContent    = plane.tail;
+  document.getElementById('p-atype').textContent   = '—';
+  document.getElementById('p-alt').textContent     = pos.altitude ? `${pos.altitude.toLocaleString()} ft` : '—';
+  document.getElementById('p-speed').textContent   = pos.speed    ? `${pos.speed} kts` : '—';
+  document.getElementById('p-heading').textContent = pos.heading  ? `${pos.heading}°`  : '—';
+  document.getElementById('p-squawk').textContent  = '—';
+
+  // Hide vertical-rate row (not meaningful for last-known)
+  document.getElementById('row-vr').style.display = 'none';
+
+  // Hide trail button (no hex for ADS-B Exchange trail)
+  document.getElementById('trail-btn').style.display = 'none';
+
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+
+// ============================================================
+//  SIDEBAR RENDERERS
+// ============================================================
+function renderFoundList(planes) {
+  const el = document.getElementById('sb-found-list');
+  el.innerHTML = '';
+  if (!planes.length) {
+    el.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">None detected</div>';
+    return;
+  }
+  planes.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'sb-row';
+    row.id = `sb-row-${p.hex}`;
+    row.innerHTML = `
+      <div class="sb-owner">${p.owner || p.tail}</div>
+      <div class="sb-reg">${p.tail}${p.callsign ? ' · ' + p.callsign : ''}</div>
+      <div class="sb-desc">${p.description || ''}</div>`;
+    row.addEventListener('click', () => selectPlane(p.hex));
+    el.appendChild(row);
+  });
+}
+
+function renderMissingList(missing) {
+  const el = document.getElementById('sb-missing-list');
+  el.innerHTML = '';
+  if (!missing.length) {
+    el.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">All planes detected</div>';
+    return;
+  }
+  missing.forEach(m => {
+    const row = document.createElement('div');
+    const safeId = m.tail.replace(/\W/g, '');
+    row.className = 'sb-row missing';
+    row.id = `sb-missing-${safeId}`;
+    row.innerHTML = `
+      <div class="sb-owner">${m.owner || m.tail}</div>
+      <div class="sb-reg">${m.tail} <span class="sb-missing-badge">NO SIGNAL</span></div>
+      <div class="sb-desc">${m.description || ''}</div>`;
+    el.appendChild(row);
+  });
+}
+
+function setSidebarActive(hex) {
+  document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
+  const row = document.getElementById(`sb-row-${hex}`);
+  if (row) row.classList.add('active');
+}
+
+
+// ============================================================
+//  LOAD PLANES — main data fetch
 // ============================================================
 async function loadPlanes() {
   try {
     const resp = await fetch('/api/planes');
     const data = await resp.json();
-    planesData = data.planes;
+    planesData  = data.planes;
+    missingData = data.missing || [];
 
-    // Update source badge
     document.getElementById('source-badge').textContent =
       data.source === 'real' ? 'LIVE ADS-B' : 'MOCK DATA';
-
-    // Update counter
     document.getElementById('count').textContent = planesData.length;
 
-    // Track which hexes are in the new data
+    // Remove stale live markers
     const freshHexes = new Set(planesData.map(p => p.hex));
-
-    // Remove stale markers (planes that left the view)
     for (const hex of Object.keys(planeMarkers)) {
-      if (!freshHexes.has(hex)) {
-        map.removeLayer(planeMarkers[hex]);
-        delete planeMarkers[hex];
-      }
+      if (!freshHexes.has(hex)) { map.removeLayer(planeMarkers[hex]); delete planeMarkers[hex]; }
     }
 
-    // Add or update markers
+    // Add / update live markers
     for (const plane of planesData) {
       const icon = makePlaneIcon(plane.heading, plane.vertical);
-
       if (planeMarkers[plane.hex]) {
-        // Update existing marker position and icon
-        planeMarkers[plane.hex]
-          .setLatLng([plane.lat, plane.lon])
-          .setIcon(icon);
+        planeMarkers[plane.hex].setLatLng([plane.lat, plane.lon]).setIcon(icon);
       } else {
-        // Create a new marker
         const marker = L.marker([plane.lat, plane.lon], { icon })
           .addTo(map)
-          .on('click', () => selectPlane(plane.hex));  // click handler
-
-        // Tooltip shows callsign on hover
+          .on('click', () => selectPlane(plane.hex));
         marker.bindTooltip(
-          `<b style="color:#00d4ff">${plane.callsign || plane.tail}</b>
-           <br/>${plane.type} · ${plane.altitude.toLocaleString()} ft`,
-          { className: 'plane-tooltip', direction: 'top', offset: [0, -12] }
+          `<b style="color:#00d4ff">${plane.owner || plane.callsign || plane.tail}</b>
+           <br/>${plane.type} · ${Number(plane.altitude).toLocaleString()} ft`,
+          { direction: 'top', offset: [0, -12] }
         );
-
         planeMarkers[plane.hex] = marker;
       }
     }
 
-    // If a plane was selected, refresh its trail if it's showing
-    if (selectedHex && trailVisible) drawTrail(selectedHex);
+    renderFoundList(planesData);
+    renderMissingList(missingData);
+
+    // If last-known is toggled on, refresh grey pins for any new missing planes
+    if (showLastKnown) {
+      // Clear old grey markers first (plane list may have changed)
+      clearLastKnownMarkers();
+      loadAllLastKnown();
+    }
+
+    if (selectedHex) setSidebarActive(selectedHex);
 
   } catch (err) {
     console.error('Failed to load planes:', err);
@@ -398,114 +619,95 @@ async function loadPlanes() {
 
 
 // ============================================================
-//  SELECT PLANE
-//  Opens the detail panel and populates it with plane info.
+//  SELECT LIVE PLANE — open full detail panel
 // ============================================================
 function selectPlane(hex) {
   selectedHex  = hex;
-  trailVisible = false;   // reset trail toggle for new selection
+  selectedIcao = null;
+  trailVisible = false;
 
   const plane = planesData.find(p => p.hex === hex);
   if (!plane) return;
 
-  // Fill in all the fields
-  document.getElementById('panel-callsign').textContent = plane.callsign || 'N/A';
+  // Reset panel to live styling
+  document.getElementById('panel-header').className     = '';
+  document.getElementById('panel-callsign').className   = '';
+  document.getElementById('panel-owner-box').className  = '';
+  document.getElementById('panel-lastknown-notice').style.display = 'none';
+  document.getElementById('row-vr').style.display       = '';
+  document.getElementById('trail-btn').style.display    = '';
+
+  document.getElementById('panel-callsign').textContent = plane.callsign || plane.tail || 'N/A';
   document.getElementById('panel-type').textContent     = `${plane.type} · ${plane.hex.toUpperCase()}`;
-  document.getElementById('p-origin').textContent       = plane.origin       || '???';
-  document.getElementById('p-dest').textContent         = plane.destination  || '???';
-  document.getElementById('p-tail').textContent         = plane.tail         || 'N/A';
-  document.getElementById('p-operator').textContent     = plane.operator     || 'Unknown';
-  document.getElementById('p-alt').textContent          = `${plane.altitude.toLocaleString()} ft`;
-  document.getElementById('p-speed').textContent        = `${plane.speed} kts`;
-  document.getElementById('p-heading').textContent      = `${plane.heading}°`;
-  document.getElementById('p-squawk').textContent       = plane.squawk || '—';
+  document.getElementById('panel-owner-name').textContent = plane.owner       || 'Unknown';
+  document.getElementById('panel-owner-desc').textContent = plane.description || '';
+  document.getElementById('p-origin').textContent  = plane.origin      || '???';
+  document.getElementById('p-dest').textContent    = plane.destination || '???';
+  document.getElementById('p-tail').textContent    = plane.tail        || 'N/A';
+  document.getElementById('p-atype').textContent   = plane.type        || 'Unknown';
+  document.getElementById('p-alt').textContent     = `${Number(plane.altitude).toLocaleString()} ft`;
+  document.getElementById('p-speed').textContent   = `${plane.speed} kts`;
+  document.getElementById('p-heading').textContent = `${plane.heading}°`;
+  document.getElementById('p-squawk').textContent  = plane.squawk || '—';
 
-  // Vertical rate with direction indicator
-  const vr      = plane.vertical;
-  const vrEl    = document.getElementById('p-vr');
-  const vrClass = vr >  100 ? 'vr-up' : vr < -100 ? 'vr-down' : 'vr-lvl';
-  const vrArrow = vr >  100 ? '▲' : vr < -100 ? '▼' : '→';
-  vrEl.textContent = `${vrArrow} ${Math.abs(vr)} fpm`;
-  vrEl.className   = `data-value ${vrClass}`;
+  const vr    = plane.vertical;
+  const vrEl  = document.getElementById('p-vr');
+  vrEl.textContent = `${vr > 100 ? '▲' : vr < -100 ? '▼' : '→'} ${Math.abs(vr)} fpm`;
+  vrEl.className   = `data-value ${vr > 100 ? 'vr-up' : vr < -100 ? 'vr-down' : 'vr-lvl'}`;
 
-  // Reset trail button label
   document.getElementById('trail-btn').textContent = 'SHOW FLIGHT PATH';
   document.getElementById('trail-btn').classList.remove('active');
+  clearTrailLayers();
 
-  // Clear any previous trail
-  if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
-
-  // Show the panel
   document.getElementById('detail-panel').classList.add('open');
-
-  // Pan the map to the selected plane
+  setSidebarActive(hex);
   map.panTo([plane.lat, plane.lon], { animate: true, duration: 0.5 });
 }
 
 
 // ============================================================
-//  TRAIL (FLIGHT PATH)
-//  Fetches position history and draws a colour-graduated
-//  polyline. Older points are dimmer, newer ones brighter.
+//  TRAIL
 // ============================================================
 async function drawTrail(hex) {
-  if (trailLayer) { map.removeLayer(trailLayer); trailLayer = null; }
-
+  clearTrailLayers();
   try {
     const resp  = await fetch(`/api/history/${hex}`);
     const data  = await resp.json();
     const trail = data.trail;
-
     if (!trail || trail.length < 2) return;
 
-    // Draw gradient trail as multiple short segments
-    // Each segment gets slightly more opaque toward the current position
     for (let i = 0; i < trail.length - 1; i++) {
-      const opacity = 0.15 + (i / trail.length) * 0.85;  // 0.15 → 1.0
-      const weight  = 1   + (i / trail.length) * 2.5;    // thin → thick
-
+      const opacity = 0.15 + (i / trail.length) * 0.85;
+      const weight  = 1   + (i / trail.length) * 2.5;
       L.polyline(
-        [[trail[i].lat, trail[i].lon], [trail[i+1].lat, trail[i+1].lon]],
+        [[trail[i].lat, trail[i].lon],[trail[i+1].lat, trail[i+1].lon]],
         { color: '#00d4ff', weight, opacity, lineJoin: 'round' }
       ).addTo(map);
     }
-
-    // Mark the oldest known point with a small dot
     L.circleMarker([trail[0].lat, trail[0].lon], {
-      radius: 4, color: '#00d4ff', fillColor: '#00d4ff',
-      fillOpacity: 0.3, weight: 1,
-    }).addTo(map).bindTooltip('Last known origin point');
-
-    // Store segments in a layer group so we can remove them easily
-    // (We re-query the map layers by flag instead for simplicity)
-    trailVisible = true;
-
+      radius: 4, color: '#00d4ff', fillColor: '#00d4ff', fillOpacity: 0.3, weight: 1,
+    }).addTo(map).bindTooltip('Trail start');
   } catch (err) {
-    console.error('Failed to load trail:', err);
+    console.error('Trail error:', err);
   }
 }
 
+function clearTrailLayers() {
+  map.eachLayer(layer => {
+    if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) map.removeLayer(layer);
+  });
+}
 
-// ============================================================
-//  TRAIL TOGGLE BUTTON
-// ============================================================
 function toggleTrail() {
   const btn = document.getElementById('trail-btn');
   if (!selectedHex) return;
-
   if (!trailVisible) {
     drawTrail(selectedHex);
     btn.textContent = 'HIDE FLIGHT PATH';
     btn.classList.add('active');
     trailVisible = true;
   } else {
-    // Clear trail segments from the map
-    map.eachLayer(layer => {
-      // Remove polylines and circle markers we drew (but not the tile layer)
-      if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) {
-        map.removeLayer(layer);
-      }
-    });
+    clearTrailLayers();
     btn.textContent = 'SHOW FLIGHT PATH';
     btn.classList.remove('active');
     trailVisible = false;
@@ -518,26 +720,18 @@ function toggleTrail() {
 // ============================================================
 function closePanel() {
   document.getElementById('detail-panel').classList.remove('open');
-  selectedHex = null;
-
-  // Also clear the trail
-  map.eachLayer(layer => {
-    if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) {
-      map.removeLayer(layer);
-    }
-  });
+  document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
+  selectedHex = null; selectedIcao = null;
+  clearTrailLayers();
   trailVisible = false;
 }
 
 
 // ============================================================
 //  AUTO-REFRESH
-//  Reloads plane positions every 15 seconds to simulate
-//  a live feed. Adjust the interval as needed.
 // ============================================================
-loadPlanes();                               // initial load
-setInterval(loadPlanes, 15_000);            // refresh every 15 s
+loadPlanes();
+setInterval(loadPlanes, 15_000);
 </script>
-
 </body>
 </html>
