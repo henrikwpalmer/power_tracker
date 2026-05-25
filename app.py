@@ -10,8 +10,8 @@
 
 from flask import Flask, jsonify, render_template_string, request
 import urllib.request, urllib.parse, json, csv, os, time
+import sqlite3
 
-app = Flask(__name__)
 
 # ─────────────────────────────────────────────────────────────
 #  CONFIGURATION
@@ -25,6 +25,76 @@ ADSB_BASE_URL = "https://adsbexchange-com1.p.rapidapi.com/v2"
 OPENSKY_BASE_URL = "https://opensky-network.org/api"
 
 CSV_PATH = "PrivateJetDirectory.csv"
+
+LAST_SAVE = 0
+SAVE_INTERVAL = 300   # 300 sec = 5 min
+
+# ─────────────────────────────────────────────────────────────
+#  DATABASE SETUP
+# ─────────────────────────────────────────────────────────────
+
+DB_PATH = "planes.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER,
+            hex TEXT,
+            tail TEXT,
+            owner TEXT,
+            lat REAL,
+            lon REAL,
+            altitude INTEGER,
+            speed REAL,
+            heading REAL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+# ─────────────────────────────────────────────────────────────
+#  SAVE SNAPSHOT
+# ─────────────────────────────────────────────────────────────
+
+def save_snapshot(plane):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO positions (
+            timestamp,
+            hex,
+            tail,
+            owner,
+            lat,
+            lon,
+            altitude,
+            speed,
+            heading
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        int(time.time()),
+        plane["hex"],
+        plane["tail"],
+        plane["owner"],
+        plane["lat"],
+        plane["lon"],
+        plane["altitude"],
+        plane["speed"],
+        plane["heading"],
+    ))
+
+    conn.commit()
+    conn.close()
+
+app = Flask(__name__)
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -71,6 +141,10 @@ def adsb_headers():
 #  ICAO hex so the frontend can request last-known positions.
 # ─────────────────────────────────────────────────────────────
 def fetch_watched_planes(watchlist):
+    global LAST_SAVE
+    should_save = (time.time() - LAST_SAVE) > SAVE_INTERVAL
+
+
     found   = []
     missing = []
 
@@ -114,7 +188,10 @@ def fetch_watched_planes(watchlist):
                 "vertical":    ac.get("baro_rate", 0),
                 "squawk":      ac.get("squawk", ""),
             })
+            if should_save:
+                save_snapshot(found[-1])
             print(f"  [watchlist] {reg} ({meta['owner']}) → {ac.get('lat')}, {ac.get('lon')}")
+
 
         except Exception as e:
             print(f"  [watchlist] {reg} ({meta['owner']}) — error: {e}")
@@ -124,6 +201,9 @@ def fetch_watched_planes(watchlist):
                 "description": meta["description"],
                 "icao":        meta["icao"],
             })
+
+        if should_save: ## might be in wrong place   
+            LAST_SAVE = time.time()
 
     return found, missing
 
@@ -284,16 +364,47 @@ def api_last_known(icao_hex):
         return jsonify({"found": False, "position": None})
 
 
+@app.route("/api/history_db/<tail>")
+def api_history_db(tail):
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+
+    cur = conn.cursor()
+
+    # Last 24 hours
+    since = int(time.time()) - 24 * 60 * 60
+
+    cur.execute("""
+        SELECT *
+        FROM positions
+        WHERE tail = ?
+        AND timestamp >= ?
+        ORDER BY timestamp ASC
+    """, (tail, since))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    history = [dict(row) for row in rows]
+
+    return jsonify({
+        "tail": tail,
+        "history": history
+    })
+
+
 # ─────────────────────────────────────────────────────────────
 #  ENTRY POINT
 # ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    init_db()
     wl = load_watchlist()
     print("=" * 55)
-    print("  Plane Tracker — running at http://127.0.0.1:5000")
+    print("  Plane Tracker — running at http://127.0.0.1:5050")
     print(f"  Watching {len(wl)} planes from {CSV_PATH}")
     for reg, meta in wl.items():
         icao_str = f"  ICAO: {meta['icao']}" if meta['icao'] else "  ICAO: not set"
         print(f"    {reg:12}  {meta['owner']:20} {icao_str}")
     print("=" * 55)
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5050)
