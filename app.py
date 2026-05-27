@@ -17,7 +17,7 @@ import sqlite3
 #  CONFIGURATION
 # ─────────────────────────────────────────────────────────────
 USE_REAL_API  = True
-ADSB_API_KEY  = ""                  # ← paste your RapidAPI key here
+ADSB_API_KEY  = "1c1f5c9d60msh15ac82f4928dc9ap163224jsn5b0358a4d923"                  # ← paste your RapidAPI key here
 ADSB_BASE_URL = "https://adsbexchange-com1.p.rapidapi.com/v2"
 
 # OpenSky is free and requires no API key for anonymous access.
@@ -393,6 +393,42 @@ def api_history_db(tail):
         "history": history
     })
 
+
+
+@app.route("/api/snapshot")
+def api_snapshot():
+
+    ts = request.args.get("ts", type=int)
+
+    if not ts:
+        return jsonify({"planes": []})
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # For each aircraft:
+    # find the closest datapoint BEFORE the selected timestamp
+    cur.execute("""
+        SELECT p1.*
+        FROM positions p1
+        INNER JOIN (
+            SELECT tail, MAX(timestamp) AS max_ts
+            FROM positions
+            WHERE timestamp <= ?
+            GROUP BY tail
+        ) p2
+        ON p1.tail = p2.tail
+        AND p1.timestamp = p2.max_ts
+    """, (ts,))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    return jsonify({
+        "timestamp": ts,
+        "planes": [dict(r) for r in rows]
+    })
 
 # ─────────────────────────────────────────────────────────────
 #  ENTRY POINT

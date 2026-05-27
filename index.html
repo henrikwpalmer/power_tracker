@@ -199,6 +199,38 @@
     .leaflet-control-zoom a { background: var(--panel-bg) !important; color: var(--text) !important; border-color: var(--panel-border) !important; }
     .leaflet-control-attribution { background: rgba(11,14,20,0.7) !important; color: var(--text-dim) !important; }
     .leaflet-control-attribution a { color: var(--text-dim) !important; }
+
+
+    #timeline-container {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 18px;
+
+      width: 60%;
+      z-index: 1200;
+
+      background: rgba(15,19,25,0.92);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+
+      padding: 12px 18px;
+      backdrop-filter: blur(8px);
+    }
+
+    #timeline {
+      width: 100%;
+    }
+
+    #timeline-label {
+      margin-top: 6px;
+      text-align: center;
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent);
+      font-size: 12px;
+    }
+
+
   </style>
 </head>
 <body>
@@ -327,6 +359,50 @@ let selectedIcao     = null; // set when a last-known pin is selected
 let planesData       = [];
 let missingData      = [];
 let showLastKnown    = false; // controlled by the header toggle
+let selectedDay = null;
+let dayStartTs  = null;
+let dayEndTs    = null;
+let replayMode = false;
+
+// ============================================================
+//  Initializing the date picker to today's date and setting up the timeline slider
+// ============================================================
+
+function initializeDatePicker() {
+
+  const picker = document.getElementById('date-picker');
+
+  const today = new Date();
+
+  const yyyy = today.getFullYear();
+  const mm   = String(today.getMonth() + 1).padStart(2, '0');
+  const dd   = String(today.getDate()).padStart(2, '0');
+
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+
+  picker.value = dateStr;
+
+  updateSelectedDay(dateStr);
+}
+
+
+// ============================================================
+//  Convert selected day into timestamps
+// ============================================================
+
+function updateSelectedDay(dateStr) {
+
+  selectedDay = dateStr;
+
+  const start = new Date(dateStr + "T00:00:00");
+  const end   = new Date(dateStr + "T23:59:59");
+
+  dayStartTs = Math.floor(start.getTime() / 1000);
+  dayEndTs   = Math.floor(end.getTime() / 1000);
+
+}
+
+
 
 
 // ============================================================
@@ -620,6 +696,8 @@ function setSidebarActive(hex) {
 // ============================================================
 async function loadPlanes() {
 
+  if (replayMode) return;
+
   // CLEAR OLD HISTORY LINES (IMPORTANT)
   for (const layer of Object.values(historyLayers)) {
     map.removeLayer(layer);
@@ -737,6 +815,26 @@ function selectPlane(hex) {
   map.panTo([plane.lat, plane.lon], { animate: true, duration: 0.5 });
 }
 
+// ============================================================
+//  No idea what this does and why its supposed to be in this spot (timeline related)
+// ============================================================
+
+document.getElementById('date-picker')
+  .addEventListener('change', (e) => {
+    updateSelectedDay(e.target.value);
+  });
+
+document.getElementById('timeline')
+  .addEventListener('input', async (e) => {
+
+    replayMode = true;
+
+    const minuteOfDay = parseInt(e.target.value);
+
+    const ts = dayStartTs + minuteOfDay * 60;
+
+    loadSnapshot(ts);
+  });
 
 // ============================================================
 //  TRAIL
@@ -787,6 +885,53 @@ function toggleTrail() {
   }
 }
 
+async function loadSnapshot(timestamp) {
+
+  try {
+
+    const resp = await fetch(`/api/snapshot?ts=${timestamp}`);
+    const data = await resp.json();
+
+    const planes = data.planes;
+
+    for (const hex of Object.keys(planeMarkers)) {
+      map.removeLayer(planeMarkers[hex]);
+    }
+
+    clearLastKnownMarkers();
+    
+    planeMarkers = {};
+
+    // Draw historical snapshot
+    planes.forEach((plane, i) => {
+
+      const icon = makePlaneIcon(
+        plane.heading || 0,
+        plane.vertical || 0
+      );
+
+      const marker = L.marker(
+        [plane.lat, plane.lon],
+        { icon }
+      ).addTo(map);
+
+      planeMarkers[plane.hex] = marker;
+
+    });
+
+    // Update label
+    const date = new Date(timestamp * 1000);
+
+    document.getElementById('timeline-label').textContent =
+      date.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+
+  } catch(err) {
+    console.error(err);
+  }
+}
 
 // ============================================================
 //  CLOSE PANEL
@@ -801,10 +946,45 @@ function closePanel() {
 
 
 // ============================================================
+//  LIVE BUTTON
+// ============================================================
+
+document.getElementById('live-btn')
+  .addEventListener('click', () => {
+
+    replayMode = false;
+
+    loadPlanes();
+
+  });
+
+
+
+// ============================================================
 //  AUTO-REFRESH
 // ============================================================
+initializeDatePicker();
 loadPlanes();
 setInterval(loadPlanes, 300000);
 </script>
+
+<div id="timeline-container">
+
+  <input type="date" id="date-picker">
+
+  <input
+    type="range"
+    id="timeline"
+    min="0"
+    max="1440"
+    step="1"
+    value="720"
+  />
+
+  <div id="timeline-label">Select a time</div>
+  <button id="live-btn">LIVE</button>
+
+</div>
+
 </body>
 </html>
