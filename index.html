@@ -30,48 +30,34 @@
       position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
       height: 48px; background: rgba(11,14,20,0.95);
       border-bottom: 1px solid var(--panel-border);
-      display: flex; align-items: center; gap: 16px;
+      display: flex; align-items: center; gap: 14px;
       padding: 0 20px; backdrop-filter: blur(8px);
     }
-    #header h1 { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; }
+    #header h1 { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; flex-shrink: 0; }
     #header h1 span { color: var(--text-dim); font-weight: 400; }
+
     #source-badge {
       font-size: 10px; font-family: 'Share Tech Mono', monospace;
       padding: 3px 8px; border-radius: 3px; letter-spacing: 1px;
-      background: rgba(255,107,53,0.15); color: var(--accent2); border: 1px solid var(--accent2);
+      background: rgba(57,255,138,0.1); color: var(--good);
+      border: 1px solid var(--good); flex-shrink: 0;
     }
 
-    /* ── Last-known toggle in header ─────────────────────── */
-    #last-known-toggle {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 12px; color: var(--text-dim);
-      font-family: 'Share Tech Mono', monospace; letter-spacing: 1px;
-      cursor: pointer; user-select: none;
-      padding: 4px 10px;
-      border: 1px solid var(--panel-border);
-      border-radius: 4px;
-      transition: border-color .2s, color .2s;
-    }
-    #last-known-toggle:hover { border-color: #7a8a9a; color: var(--text); }
-    #last-known-toggle.active { border-color: #7a8a9a; color: #a0b8c8; }
+    /* Poller status */
+    #poller-status { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
+    #poller-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; transition: background .3s; }
+    #poller-dot.polling { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse .8s infinite; }
+    #poller-dot.waiting { background: var(--text-dim); }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+    #poller-label { letter-spacing: 1px; }
 
-    /* Custom checkbox dot */
-    #lk-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background: #3a4a5a; border: 1px solid #5a7080;
-      transition: background .2s, border-color .2s;
-      flex-shrink: 0;
-    }
-    #last-known-toggle.active #lk-dot { background: #8a9aaa; border-color: #a0b8c8; }
+    #next-cycle-wrap { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text-dim); }
+    #next-cycle-wrap span { color: var(--text); }
 
-    #plane-count { margin-left: auto; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-dim); }
+    #plane-count { margin-left: auto; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-dim); flex-shrink: 0; }
     #plane-count b { color: var(--accent); font-size: 16px; }
-    #refresh-btn {
-      background: none; border: 1px solid var(--panel-border); color: var(--text-dim);
-      padding: 4px 12px; border-radius: 4px; cursor: pointer;
-      font-family: inherit; font-size: 12px; letter-spacing: 1px; transition: all .2s;
-    }
-    #refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    #last-updated { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
 
     /* ── Shell ─────────────────────────────────────────────── */
     #shell { position: fixed; top: 48px; bottom: 0; left: 0; right: 0; display: flex; }
@@ -103,15 +89,10 @@
     .sb-reg { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--accent); }
     .sb-desc { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* Missing section */
     #sb-missing-section { flex-shrink: 0; }
-    .sb-row.missing { cursor: default; opacity: 0.55; }
+    .sb-row.missing { cursor: default; opacity: 0.5; }
     .sb-row.missing:hover { background: none; }
-    /* Missing rows that have a last-known position become clickable */
-    .sb-row.missing.has-lastknown { cursor: pointer; opacity: 0.75; }
-    .sb-row.missing.has-lastknown:hover { background: rgba(160,184,200,0.06); }
     .sb-missing-badge { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: var(--accent2); letter-spacing: 1px; }
-    .sb-lastknown-badge { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: #8a9aaa; letter-spacing: 1px; margin-left: 4px; }
 
     #sb-spacer { flex: 1; min-height: 8px; }
 
@@ -133,38 +114,19 @@
       background: rgba(0,212,255,0.06); border-bottom: 1px solid var(--panel-border);
       padding: 12px 16px; display: flex; align-items: flex-start; justify-content: space-between;
     }
-
-    /* Grey header variant for last-known panels */
-    #panel-header.lastknown-header { background: rgba(120,140,160,0.08); }
-
     #panel-callsign { font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 2px; }
-    #panel-callsign.lastknown { color: #8a9aaa; }
     #panel-type { font-size: 12px; color: var(--text-dim); font-family: 'Share Tech Mono', monospace; }
     #panel-close { cursor: pointer; color: var(--text-dim); font-size: 20px; line-height: 1; transition: color .15s; }
     #panel-close:hover { color: var(--accent2); }
 
     #panel-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 
-    /* Last-known notice banner */
-    #panel-lastknown-notice {
-      display: none;
-      background: rgba(120,140,160,0.1); border: 1px solid #3a4a5a;
-      border-radius: 4px; padding: 7px 10px;
-      font-size: 11px; color: #8a9aaa;
-      font-family: 'Share Tech Mono', monospace; letter-spacing: 0.5px;
-    }
-
     #panel-owner-box {
       background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.2);
       border-radius: 4px; padding: 8px 10px; margin-bottom: 4px;
     }
-    #panel-owner-box.lastknown { background: rgba(120,140,160,0.05); border-color: rgba(120,140,160,0.2); }
     #panel-owner-name { font-size: 16px; font-weight: 700; color: var(--text); }
     #panel-owner-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
-
-    #panel-route { display: flex; align-items: center; gap: 8px; font-family: 'Share Tech Mono', monospace; margin-bottom: 2px; }
-    .route-ap { font-size: 22px; font-weight: 700; color: var(--text); }
-    .route-arrow { color: var(--text-dim); font-size: 18px; flex: 1; text-align: center; }
 
     .data-row { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,0.04); padding-bottom: 6px; }
     .data-row:last-child { border-bottom: none; }
@@ -194,7 +156,6 @@
     .leg-row { display: flex; align-items: center; gap: 8px; }
     .leg-dot { width: 10px; height: 10px; border-radius: 50%; }
 
-    /* Leaflet overrides */
     .leaflet-container { background: #0b0e14; }
     .leaflet-control-zoom a { background: var(--panel-bg) !important; color: var(--text) !important; border-color: var(--panel-border) !important; }
     .leaflet-control-attribution { background: rgba(11,14,20,0.7) !important; color: var(--text-dim) !important; }
@@ -206,16 +167,16 @@
 <!-- ── Header ──────────────────────────────────────────────── -->
 <div id="header">
   <h1>PLANE <span>TRACKER</span></h1>
-  <div id="source-badge">LIVE ADS-B</div>
+  <div id="source-badge">AIRPLANES.LIVE</div>
 
-  <!-- Toggle for last-known positions -->
-  <div id="last-known-toggle" onclick="toggleLastKnown()" title="Show last known location of grounded/offline planes">
-    <div id="lk-dot"></div>
-    LAST KNOWN
+  <div id="poller-status">
+    <div id="poller-dot" class="waiting"></div>
+    <span id="poller-label">WAITING</span>
   </div>
 
+  <div id="next-cycle-wrap">NEXT CYCLE <span id="countdown">—</span></div>
   <div id="plane-count">Tracking <b id="count">0</b> aircraft</div>
-  <button id="refresh-btn" onclick="loadPlanes()">↺ REFRESH</button>
+  <div id="last-updated">—</div>
 </div>
 
 <!-- ── Shell ───────────────────────────────────────────────── -->
@@ -245,18 +206,10 @@
         <div id="panel-close" onclick="closePanel()">✕</div>
       </div>
       <div id="panel-body">
-        <!-- Last-known notice (only shown for grey pins) -->
-        <div id="panel-lastknown-notice"></div>
 
         <div id="panel-owner-box">
           <div id="panel-owner-name">—</div>
           <div id="panel-owner-desc">—</div>
-        </div>
-
-        <div id="panel-route">
-          <span class="route-ap" id="p-origin">???</span>
-          <span class="route-arrow">──▶</span>
-          <span class="route-ap" id="p-dest">???</span>
         </div>
 
         <div class="data-row">
@@ -279,13 +232,17 @@
           <span class="data-label">Heading</span>
           <span class="data-value" id="p-heading">—</span>
         </div>
-        <div class="data-row" id="row-vr">
+        <div class="data-row">
           <span class="data-label">Vert. Rate</span>
           <span class="data-value" id="p-vr">—</span>
         </div>
         <div class="data-row">
           <span class="data-label">Squawk</span>
           <span class="data-value" id="p-squawk">—</span>
+        </div>
+        <div class="data-row">
+          <span class="data-label">Last Seen</span>
+          <span class="data-value" id="p-seen">—</span>
         </div>
 
         <button id="trail-btn" onclick="toggleTrail()">SHOW FLIGHT PATH</button>
@@ -297,7 +254,6 @@
       <div class="leg-row"><div class="leg-dot" style="background:#39ff8a"></div> Climbing</div>
       <div class="leg-row"><div class="leg-dot" style="background:#00d4ff"></div> Level flight</div>
       <div class="leg-row"><div class="leg-dot" style="background:#ff6b35"></div> Descending</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#6a7a8a;border:1px solid #8a9aaa"></div> Last known pos.</div>
     </div>
 
   </div><!-- /#map -->
@@ -318,24 +274,22 @@ L.tileLayer(
 // ============================================================
 //  STATE
 // ============================================================
-let planeMarkers     = {};   // hex → Leaflet marker  (live, coloured)
-let lastKnownMarkers = {};   // icao → Leaflet marker (grey, last-seen)
-let trailVisible     = false;
-let selectedHex      = null;
-let selectedIcao     = null; // set when a last-known pin is selected
-let planesData       = [];
-let missingData      = [];
-let showLastKnown    = false; // controlled by the header toggle
+let planeMarkers  = {};   // hex → Leaflet marker
+let trailVisible  = false;
+let selectedHex   = null;
+let selectedTail  = null; // tail/reg of selected plane (for trail lookup)
+let planesData    = [];
+let missingData   = [];
+let nextCycleTime = null;
 
 
 // ============================================================
-//  PLANE ICON — coloured, for live planes
+//  PLANE ICON
 // ============================================================
 function makePlaneIcon(heading, verticalRate) {
   const colour =
     verticalRate >  100 ? '#39ff8a' :
     verticalRate < -100 ? '#ff6b35' : '#00d4ff';
-
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
       <g transform="rotate(${heading}, 14, 14)">
@@ -348,167 +302,32 @@ function makePlaneIcon(heading, verticalRate) {
   return L.divIcon({ className: '', html: svg, iconSize: [28,28], iconAnchor: [14,14] });
 }
 
+
 // ============================================================
-//  LAST-KNOWN ICON — muted grey, for grounded/offline planes
-//  Uses a simpler dot + direction tick so it's visually
-//  distinct from the live coloured icons.
+//  HEADER STATUS
 // ============================================================
-function makeLastKnownIcon(heading) {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-      <g transform="rotate(${heading}, 12, 12)">
-        <polygon points="12,2 14,18 12,16 10,18" fill="#6a7a8a" opacity="0.9"/>
-        <polygon points="12,9 21,15 12,13 3,15"  fill="#6a7a8a" opacity="0.75"/>
-        <polygon points="12,15 16,22 12,20 8,22" fill="#6a7a8a" opacity="0.6"/>
-        <circle cx="12" cy="12" r="3" fill="none" stroke="#8a9aaa" stroke-width="1" opacity="0.7"/>
-      </g>
-    </svg>`;
-  return L.divIcon({ className: '', html: svg, iconSize: [24,24], iconAnchor: [12,12] });
+function tickCountdown() {
+  const el = document.getElementById('countdown');
+  if (!nextCycleTime) { el.textContent = '—'; return; }
+  const secsLeft = Math.max(0, Math.round((nextCycleTime - Date.now()) / 1000));
+  const m = String(Math.floor(secsLeft / 60)).padStart(2, '0');
+  const s = String(secsLeft % 60).padStart(2, '0');
+  el.textContent = `${m}:${s}`;
 }
 
-
-// ============================================================
-//  TOGGLE — show/hide last-known positions
-// ============================================================
-function toggleLastKnown() {
-  showLastKnown = !showLastKnown;
-  const toggle = document.getElementById('last-known-toggle');
-  toggle.classList.toggle('active', showLastKnown);
-
-  if (showLastKnown) {
-    // Load last-known positions for all missing planes that have an ICAO
-    loadAllLastKnown();
+function updatePollerStatus(status, currentReg) {
+  const dot   = document.getElementById('poller-dot');
+  const label = document.getElementById('poller-label');
+  if (status === 'polling') {
+    dot.className     = 'polling';
+    label.textContent = currentReg ? `POLLING ${currentReg}` : 'POLLING';
+  } else if (status === 'waiting') {
+    dot.className     = 'waiting';
+    label.textContent = 'WAITING';
   } else {
-    // Remove all grey markers from the map
-    clearLastKnownMarkers();
+    dot.className     = 'waiting';
+    label.textContent = 'STARTING';
   }
-}
-
-// Remove every grey marker
-function clearLastKnownMarkers() {
-  for (const icao of Object.keys(lastKnownMarkers)) {
-    map.removeLayer(lastKnownMarkers[icao]);
-  }
-  lastKnownMarkers = {};
-}
-
-// Fetch and place last-known pins for all missing planes
-async function loadAllLastKnown() {
-  for (const plane of missingData) {
-    if (!plane.icao) continue;
-    await loadLastKnownForPlane(plane);
-  }
-}
-
-// Fetch last-known for one plane and place the grey marker
-async function loadLastKnownForPlane(plane) {
-  if (!plane.icao || lastKnownMarkers[plane.icao]) return; // already loaded
-
-  try {
-    const resp = await fetch(`/api/last_known/${plane.icao}`);
-    const data = await resp.json();
-
-    if (!data.found || !data.position) return;
-
-    const pos    = data.position;
-    const icon   = makeLastKnownIcon(pos.heading || 0);
-    const marker = L.marker([pos.lat, pos.lon], { icon, zIndexOffset: -100 })
-      .addTo(map);
-
-    // Format the last-contact timestamp into a readable string
-    const lastSeen = pos.last_contact
-      ? new Date(pos.last_contact * 1000).toUTCString()
-      : 'Unknown';
-
-    // Tooltip on hover
-    marker.bindTooltip(
-      `<b style="color:#8a9aaa">${plane.owner}</b> <span style="color:#5a7080">(last known)</span>
-       <br/>${plane.tail} · ${pos.on_ground ? 'On ground' : 'Airborne'}
-       <br/><span style="color:#5a7080;font-size:10px">${lastSeen}</span>`,
-      { direction: 'top', offset: [0, -12] }
-    );
-
-    // Click opens a "last known" variant of the detail panel
-    marker.on('click', () => openLastKnownPanel(plane, pos, lastSeen));
-
-    lastKnownMarkers[plane.icao] = marker;
-
-    // Update sidebar row to show the grey badge and become clickable
-    updateMissingSidebarRow(plane, pos, lastSeen);
-
-  } catch (err) {
-    console.error(`[last_known] Failed for ${plane.icao}:`, err);
-  }
-}
-
-// Update a missing sidebar row once last-known data arrives
-function updateMissingSidebarRow(plane, pos, lastSeen) {
-  const rowId = `sb-missing-${plane.tail.replace(/\W/g, '')}`;
-  const row   = document.getElementById(rowId);
-  if (!row) return;
-
-  row.classList.add('has-lastknown');
-
-  // Add grey badge next to NO SIGNAL
-  const regEl = row.querySelector('.sb-reg');
-  if (regEl && !regEl.querySelector('.sb-lastknown-badge')) {
-    const badge = document.createElement('span');
-    badge.className = 'sb-lastknown-badge';
-    badge.textContent = '· LAST KNOWN';
-    regEl.appendChild(badge);
-  }
-
-  // Make it pan to the grey pin on click
-  row.onclick = () => {
-    map.panTo([pos.lat, pos.lon], { animate: true, duration: 0.5 });
-    openLastKnownPanel(plane, pos, lastSeen);
-  };
-}
-
-
-// ============================================================
-//  OPEN LAST-KNOWN PANEL
-//  A read-only variant of the detail panel; no trail button.
-// ============================================================
-function openLastKnownPanel(plane, pos, lastSeen) {
-  selectedHex  = null;
-  selectedIcao = plane.icao;
-  clearTrailLayers();
-
-  // Style panel header in grey
-  document.getElementById('panel-header').className     = 'lastknown-header';
-  document.getElementById('panel-callsign').textContent = plane.tail;
-  document.getElementById('panel-callsign').className   = 'lastknown';
-  document.getElementById('panel-type').textContent     = `ICAO: ${plane.icao.toUpperCase()}`;
-
-  // Show last-known notice
-  const notice = document.getElementById('panel-lastknown-notice');
-  notice.style.display = 'block';
-  notice.textContent   = `⊙ LAST KNOWN  ·  ${lastSeen}`;
-
-  // Owner box in grey
-  document.getElementById('panel-owner-box').className  = 'lastknown';
-  document.getElementById('panel-owner-name').textContent = plane.owner       || '—';
-  document.getElementById('panel-owner-desc').textContent = plane.description || '—';
-
-  // Route unknown for last-known
-  document.getElementById('p-origin').textContent = '???';
-  document.getElementById('p-dest').textContent   = '???';
-
-  document.getElementById('p-tail').textContent    = plane.tail;
-  document.getElementById('p-atype').textContent   = '—';
-  document.getElementById('p-alt').textContent     = pos.altitude ? `${pos.altitude.toLocaleString()} ft` : '—';
-  document.getElementById('p-speed').textContent   = pos.speed    ? `${pos.speed} kts` : '—';
-  document.getElementById('p-heading').textContent = pos.heading  ? `${pos.heading}°`  : '—';
-  document.getElementById('p-squawk').textContent  = '—';
-
-  // Hide vertical-rate row (not meaningful for last-known)
-  document.getElementById('row-vr').style.display = 'none';
-
-  // Hide trail button (no hex for ADS-B Exchange trail)
-  document.getElementById('trail-btn').style.display = 'none';
-
-  document.getElementById('detail-panel').classList.add('open');
 }
 
 
@@ -544,9 +363,7 @@ function renderMissingList(missing) {
   }
   missing.forEach(m => {
     const row = document.createElement('div');
-    const safeId = m.tail.replace(/\W/g, '');
     row.className = 'sb-row missing';
-    row.id = `sb-missing-${safeId}`;
     row.innerHTML = `
       <div class="sb-owner">${m.owner || m.tail}</div>
       <div class="sb-reg">${m.tail} <span class="sb-missing-badge">NO SIGNAL</span></div>
@@ -563,26 +380,39 @@ function setSidebarActive(hex) {
 
 
 // ============================================================
-//  LOAD PLANES — main data fetch
+//  LOAD PLANES
+//  Polls /api/planes every 10 seconds — reads the backend
+//  per-plane cache, so any plane polled since the last check
+//  will immediately appear or disappear from the map.
 // ============================================================
 async function loadPlanes() {
   try {
     const resp = await fetch('/api/planes');
     const data = await resp.json();
-    planesData  = data.planes;
+
+    planesData  = data.planes  || [];
     missingData = data.missing || [];
 
-    document.getElementById('source-badge').textContent =
-      data.source === 'real' ? 'LIVE ADS-B' : 'MOCK DATA';
     document.getElementById('count').textContent = planesData.length;
+    document.getElementById('last-updated').textContent =
+      data.last_updated ? `UPDATED ${data.last_updated}` : '—';
 
-    // Remove stale live markers
+    if (data.next_cycle) {
+      nextCycleTime = new Date(data.next_cycle.replace(' UTC', 'Z'));
+    }
+
+    updatePollerStatus(data.status, data.current_reg);
+
+    // Remove markers for planes no longer found
     const freshHexes = new Set(planesData.map(p => p.hex));
     for (const hex of Object.keys(planeMarkers)) {
       if (!freshHexes.has(hex)) { map.removeLayer(planeMarkers[hex]); delete planeMarkers[hex]; }
     }
 
-    // Add / update live markers
+    // Add or update a marker for each found plane.
+    // Because the backend updates _plane_cache one plane at a time,
+    // a plane polled 4 seconds ago will already be in this list
+    // even if the rest of the watchlist hasn't been checked yet.
     for (const plane of planesData) {
       const icon = makePlaneIcon(plane.heading, plane.vertical);
       if (planeMarkers[plane.hex]) {
@@ -602,14 +432,6 @@ async function loadPlanes() {
 
     renderFoundList(planesData);
     renderMissingList(missingData);
-
-    // If last-known is toggled on, refresh grey pins for any new missing planes
-    if (showLastKnown) {
-      // Clear old grey markers first (plane list may have changed)
-      clearLastKnownMarkers();
-      loadAllLastKnown();
-    }
-
     if (selectedHex) setSidebarActive(selectedHex);
 
   } catch (err) {
@@ -619,39 +441,32 @@ async function loadPlanes() {
 
 
 // ============================================================
-//  SELECT LIVE PLANE — open full detail panel
+//  SELECT PLANE — populate and open the detail panel
 // ============================================================
 function selectPlane(hex) {
   selectedHex  = hex;
-  selectedIcao = null;
   trailVisible = false;
 
   const plane = planesData.find(p => p.hex === hex);
   if (!plane) return;
 
-  // Reset panel to live styling
-  document.getElementById('panel-header').className     = '';
-  document.getElementById('panel-callsign').className   = '';
-  document.getElementById('panel-owner-box').className  = '';
-  document.getElementById('panel-lastknown-notice').style.display = 'none';
-  document.getElementById('row-vr').style.display       = '';
-  document.getElementById('trail-btn').style.display    = '';
+  // Store the tail number so toggleTrail knows which /api/trail/ to call
+  selectedTail = plane.tail;
 
-  document.getElementById('panel-callsign').textContent = plane.callsign || plane.tail || 'N/A';
-  document.getElementById('panel-type').textContent     = `${plane.type} · ${plane.hex.toUpperCase()}`;
+  document.getElementById('panel-callsign').textContent   = plane.callsign || plane.tail || 'N/A';
+  document.getElementById('panel-type').textContent       = `${plane.type} · ${plane.hex.toUpperCase()}`;
   document.getElementById('panel-owner-name').textContent = plane.owner       || 'Unknown';
   document.getElementById('panel-owner-desc').textContent = plane.description || '';
-  document.getElementById('p-origin').textContent  = plane.origin      || '???';
-  document.getElementById('p-dest').textContent    = plane.destination || '???';
   document.getElementById('p-tail').textContent    = plane.tail        || 'N/A';
   document.getElementById('p-atype').textContent   = plane.type        || 'Unknown';
   document.getElementById('p-alt').textContent     = `${Number(plane.altitude).toLocaleString()} ft`;
   document.getElementById('p-speed').textContent   = `${plane.speed} kts`;
   document.getElementById('p-heading').textContent = `${plane.heading}°`;
   document.getElementById('p-squawk').textContent  = plane.squawk || '—';
+  document.getElementById('p-seen').textContent    = plane.seen != null ? `${plane.seen}s ago` : '—';
 
-  const vr    = plane.vertical;
-  const vrEl  = document.getElementById('p-vr');
+  const vr   = plane.vertical;
+  const vrEl = document.getElementById('p-vr');
   vrEl.textContent = `${vr > 100 ? '▲' : vr < -100 ? '▼' : '→'} ${Math.abs(vr)} fpm`;
   vrEl.className   = `data-value ${vr > 100 ? 'vr-up' : vr < -100 ? 'vr-down' : 'vr-lvl'}`;
 
@@ -667,42 +482,67 @@ function selectPlane(hex) {
 
 // ============================================================
 //  TRAIL
+//  Fetches real trail points from /api/trail/<reg>.
+//  These come from the airplanes.live response and cover the
+//  last few minutes of flight — drawn as a gradient polyline,
+//  dim at the oldest point and bright at the current position.
 // ============================================================
-async function drawTrail(hex) {
-  clearTrailLayers();
-  try {
-    const resp  = await fetch(`/api/history/${hex}`);
-    const data  = await resp.json();
-    const trail = data.trail;
-    if (!trail || trail.length < 2) return;
-
-    for (let i = 0; i < trail.length - 1; i++) {
-      const opacity = 0.15 + (i / trail.length) * 0.85;
-      const weight  = 1   + (i / trail.length) * 2.5;
-      L.polyline(
-        [[trail[i].lat, trail[i].lon],[trail[i+1].lat, trail[i+1].lon]],
-        { color: '#00d4ff', weight, opacity, lineJoin: 'round' }
-      ).addTo(map);
-    }
-    L.circleMarker([trail[0].lat, trail[0].lon], {
-      radius: 4, color: '#00d4ff', fillColor: '#00d4ff', fillOpacity: 0.3, weight: 1,
-    }).addTo(map).bindTooltip('Trail start');
-  } catch (err) {
-    console.error('Trail error:', err);
-  }
-}
-
 function clearTrailLayers() {
   map.eachLayer(layer => {
     if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) map.removeLayer(layer);
   });
 }
 
+async function drawTrail(tail) {
+  clearTrailLayers();
+
+  try {
+    const resp  = await fetch(`/api/trail/${tail}`);
+    const data  = await resp.json();
+    const trail = data.trail;
+
+    if (!trail || trail.length < 2) {
+      // Fewer than 2 points — fall back to a heading-direction line
+      const plane = planesData.find(p => p.tail === tail);
+      if (plane) {
+        const rad     = (plane.heading - 180) * Math.PI / 180;
+        const tailLat = plane.lat + Math.cos(rad) * 0.3;
+        const tailLon = plane.lon + Math.sin(rad) * 0.3;
+        L.polyline([[tailLat, tailLon], [plane.lat, plane.lon]], {
+          color: '#00d4ff', weight: 2, opacity: 0.5, dashArray: '6 4',
+        }).addTo(map);
+      }
+      return;
+    }
+
+    // Draw gradient trail — older segments are dimmer and thinner
+    for (let i = 0; i < trail.length - 1; i++) {
+      const frac    = i / (trail.length - 1);     // 0 = oldest, 1 = newest
+      const opacity = 0.15 + frac * 0.85;
+      const weight  = 1   + frac * 2.5;
+      L.polyline(
+        [[trail[i].lat, trail[i].lon], [trail[i+1].lat, trail[i+1].lon]],
+        { color: '#00d4ff', weight, opacity, lineJoin: 'round' }
+      ).addTo(map);
+    }
+
+    // Small dot at the oldest known point
+    L.circleMarker([trail[0].lat, trail[0].lon], {
+      radius: 4, color: '#00d4ff', fillColor: '#00d4ff',
+      fillOpacity: 0.3, weight: 1,
+    }).addTo(map).bindTooltip('Trail start');
+
+  } catch (err) {
+    console.error('Trail fetch error:', err);
+  }
+}
+
 function toggleTrail() {
   const btn = document.getElementById('trail-btn');
-  if (!selectedHex) return;
+  if (!selectedTail) return;
+
   if (!trailVisible) {
-    drawTrail(selectedHex);
+    drawTrail(selectedTail);
     btn.textContent = 'HIDE FLIGHT PATH';
     btn.classList.add('active');
     trailVisible = true;
@@ -721,17 +561,19 @@ function toggleTrail() {
 function closePanel() {
   document.getElementById('detail-panel').classList.remove('open');
   document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
-  selectedHex = null; selectedIcao = null;
+  selectedHex  = null;
+  selectedTail = null;
   clearTrailLayers();
   trailVisible = false;
 }
 
 
 // ============================================================
-//  AUTO-REFRESH
+//  TIMERS
 // ============================================================
 loadPlanes();
-setInterval(loadPlanes, 15_000);
+setInterval(loadPlanes,    10_000);   // refresh map from cache every 10s
+setInterval(tickCountdown,  1_000);   // tick countdown clock every 1s
 </script>
 </body>
 </html>

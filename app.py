@@ -1,36 +1,58 @@
 """
 =============================================================
   Plane Tracker — Flask Backend
-  - Live positions via ADS-B Exchange (RapidAPI)
-  - Last known position via OpenSky Network (free, no key needed)
+  - Live positions via airplanes.live (free, no key needed)
   - Watchlist loaded from CSV with columns:
-      Registration Code, Owner Name, Description, ICAO
+      Registration Code, Owner Name, Description
+  - Polling strategy:
+      • One API call every 5 seconds (respects 1 req/s limit)
+      • Full watchlist cycle waits 5 minutes before repeating
+      • Frontend reads from a per-plane cache — results appear
+        on the map immediately as each plane is found, rather
+        than waiting for the full cycle to complete
 =============================================================
 """
 
-from flask import Flask, jsonify, render_template_string, request
-import urllib.request, urllib.parse, json, csv, os, time
+from flask import Flask, jsonify, render_template_string
+import urllib.request, json, csv, os, time, threading
 
 app = Flask(__name__)
 
 # ─────────────────────────────────────────────────────────────
 #  CONFIGURATION
 # ─────────────────────────────────────────────────────────────
-USE_REAL_API  = True
-ADSB_API_KEY  = ""                  # ← paste your RapidAPI key here
-ADSB_BASE_URL = "https://adsbexchange-com1.p.rapidapi.com/v2"
+ADSB_BASE_URL = "http://api.airplanes.live/v2"
+CSV_PATH      = "PrivateJetDirectory.csv"
 
-# OpenSky is free and requires no API key for anonymous access.
-# Rate limit: ~10 requests per 10 seconds for anonymous users.
-OPENSKY_BASE_URL = "https://opensky-network.org/api"
+POLL_INTERVAL = 5      # seconds between each individual plane lookup
+CYCLE_WAIT    = 300    # seconds to wait after a full watchlist cycle (5 min)
 
-CSV_PATH = "PrivateJetDirectory.csv"
+
+# ─────────────────────────────────────────────────────────────
+#  SHARED CACHE
+#
+#  _plane_cache  — dict keyed by registration; each entry holds
+#                  the latest result (found or missing) for that
+#                  plane. Updated immediately when each plane is
+#                  polled, so the frontend can show results one
+#                  by one rather than waiting for the full cycle.
+#
+#  _cycle_meta   — metadata about the current/last cycle overall.
+# ─────────────────────────────────────────────────────────────
+_cache_lock  = threading.Lock()
+
+_plane_cache = {}   # { "N628TS": { "status": "found"|"missing", "data": {...} } }
+
+_cycle_meta  = {
+    "last_updated": None,   # ISO string of last completed cycle
+    "next_cycle":   None,   # ISO string of when next cycle starts
+    "status":       "starting",   # "polling" | "waiting" | "starting"
+    "current_reg":  None,   # registration currently being queried
+}
 
 
 # ─────────────────────────────────────────────────────────────
 #  LOAD WATCHLIST FROM CSV
-#  Expects columns: Registration Code, Owner Name, Description, ICAO
-#  ICAO is the 6-character hex transponder address, e.g. "a835af"
 # ─────────────────────────────────────────────────────────────
 def load_watchlist():
     watchlist = {}
@@ -47,8 +69,6 @@ def load_watchlist():
                 watchlist[reg] = {
                     "owner":       row.get("Owner Name",  "Unknown").strip(),
                     "description": row.get("Description", "").strip(),
-                    # ICAO hex — lowercase, strip whitespace
-                    "icao":        row.get("ICAO", "").strip().lower(),
                 }
 
     print(f"  [csv] Loaded {len(watchlist)} planes from {CSV_PATH}")
@@ -56,188 +76,141 @@ def load_watchlist():
 
 
 # ─────────────────────────────────────────────────────────────
-#  SHARED ADSB HEADERS
-# ─────────────────────────────────────────────────────────────
-def adsb_headers():
-    return {
-        "X-RapidAPI-Key":  ADSB_API_KEY,
-        "X-RapidAPI-Host": "adsbexchange-com1.p.rapidapi.com",
-    }
-
-
-# ─────────────────────────────────────────────────────────────
-#  FETCH LIVE PLANES (ADS-B Exchange)
-#  Returns (found, missing) where missing entries include the
-#  ICAO hex so the frontend can request last-known positions.
-# ─────────────────────────────────────────────────────────────
-def fetch_watched_planes(watchlist):
-    found   = []
-    missing = []
-
-    for reg, meta in watchlist.items():
-        url = f"{ADSB_BASE_URL}/registration/{reg}/"
-        req = urllib.request.Request(url, headers=adsb_headers())
-
-        try:
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                raw = json.loads(resp.read())
-
-            ac_list = raw.get("ac", [])
-
-            if not ac_list:
-                print(f"  [watchlist] {reg} ({meta['owner']}) — no signal")
-                missing.append({
-                    "tail":        reg,
-                    "owner":       meta["owner"],
-                    "description": meta["description"],
-                    "icao":        meta["icao"],
-                })
-                continue
-
-            ac = ac_list[0]
-            found.append({
-                "hex":         ac.get("hex", ""),
-                "tail":        ac.get("r", reg),
-                "callsign":    ac.get("flight", "").strip(),
-                "owner":       meta["owner"],
-                "description": meta["description"],
-                "icao":        meta["icao"],
-                "operator":    ac.get("ownOp", meta["owner"]),
-                "type":        ac.get("t", "Unknown"),
-                "origin":      ac.get("orig", "?"),
-                "destination": ac.get("dest", "?"),
-                "lat":         ac.get("lat", 0),
-                "lon":         ac.get("lon", 0),
-                "altitude":    ac.get("alt_baro", 0),
-                "speed":       ac.get("gs", 0),
-                "heading":     ac.get("track", 0),
-                "vertical":    ac.get("baro_rate", 0),
-                "squawk":      ac.get("squawk", ""),
-            })
-            print(f"  [watchlist] {reg} ({meta['owner']}) → {ac.get('lat')}, {ac.get('lon')}")
-
-        except Exception as e:
-            print(f"  [watchlist] {reg} ({meta['owner']}) — error: {e}")
-            missing.append({
-                "tail":        reg,
-                "owner":       meta["owner"],
-                "description": meta["description"],
-                "icao":        meta["icao"],
-            })
-
-    return found, missing
-
-
-# ─────────────────────────────────────────────────────────────
-#  FETCH LAST KNOWN POSITION (OpenSky Network)
+#  FETCH SINGLE PLANE (airplanes.live)
 #
-#  OpenSky's /states/all endpoint accepts an ICAO hex and
-#  returns the most recent state vector it has on record —
-#  even if the plane landed hours or days ago. This is the
-#  "last seen" snapshot, not a live position.
+#  airplanes.live returns a "trail" array in the response — a
+#  list of recent position points, each with lat, lon, alt,
+#  and a unix timestamp. This gives us a short flight path
+#  (typically the last few minutes) for free with every lookup.
 #
-#  Endpoint: GET /states/all?icao24={hex}
-#  Returns:  list of state vectors, each with:
-#    [icao24, callsign, origin_country, time_position,
-#     last_contact, longitude, latitude, baro_altitude,
-#     on_ground, velocity, true_track, vertical_rate,
-#     sensors, geo_altitude, squawk, spi, position_source]
-#
-#  Anonymous rate limit: ~10 req / 10 s. We cache results for
-#  60 seconds to avoid hammering the API on map refreshes.
+#  Trail point structure:
+#    { "lat": float, "lon": float, "alt": int,
+#      "spd": int, "hd": int, "ts": int }
 # ─────────────────────────────────────────────────────────────
-
-# Simple in-memory cache: { icao: { "ts": unix_time, "data": {...} } }
-_opensky_cache = {}
-CACHE_TTL = 60  # seconds
-
-
-def fetch_last_known_position(icao_hex):
-    """
-    Query OpenSky for the last recorded state vector for one aircraft.
-    Returns a dict with lat, lon, altitude, heading, speed, timestamp,
-    or None if nothing is found.
-    """
-    if not icao_hex:
-        return None
-
-    # Return cached result if fresh enough
-    cached = _opensky_cache.get(icao_hex)
-    if cached and (time.time() - cached["ts"]) < CACHE_TTL:
-        return cached["data"]
-
-    url = f"{OPENSKY_BASE_URL}/states/all?icao24={icao_hex.lower()}"
+def fetch_plane_by_reg(reg, meta):
+    url = f"{ADSB_BASE_URL}/reg/{reg}"
     req = urllib.request.Request(url, headers={"User-Agent": "PlaneTracker/1.0"})
-
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            raw = json.loads(resp.read())
-    except Exception as e:
-        print(f"  [opensky] Failed for {icao_hex}: {e}")
-        return None
-
-    states = raw.get("states")
-    if not states:
-        print(f"  [opensky] No state vector found for {icao_hex}")
-        return None
-
-    # State vector field indices (per OpenSky docs)
-    sv = states[0]
-    lat         = sv[6]   # latitude
-    lon         = sv[5]   # longitude
-    baro_alt    = sv[7]   # barometric altitude in metres (None if unknown)
-    on_ground   = sv[8]   # boolean
-    speed       = sv[9]   # m/s
-    heading     = sv[10]  # degrees
-    last_contact= sv[4]   # unix timestamp of last ADS-B message
-
-    if lat is None or lon is None:
-        return None
-
-    # Convert metres → feet for consistency with the rest of the app
-    alt_ft = round(baro_alt * 3.28084) if baro_alt else 0
-    # Convert m/s → knots
-    speed_kts = round(speed * 1.94384) if speed else 0
-
-    result = {
-        "icao":         icao_hex,
-        "lat":          lat,
-        "lon":          lon,
-        "altitude":     alt_ft,
-        "speed":        speed_kts,
-        "heading":      round(heading) if heading else 0,
-        "on_ground":    on_ground,
-        "last_contact": last_contact,  # unix timestamp
-    }
-
-    # Cache it
-    _opensky_cache[icao_hex] = {"ts": time.time(), "data": result}
-    return result
-
-
-# ─────────────────────────────────────────────────────────────
-#  FETCH FLIGHT HISTORY (ADS-B Exchange)
-# ─────────────────────────────────────────────────────────────
-def fetch_real_history(hex_code):
-    url = f"{ADSB_BASE_URL}/hex/{hex_code}/"
-    req = urllib.request.Request(url, headers=adsb_headers())
 
     try:
         with urllib.request.urlopen(req, timeout=8) as resp:
             raw = json.loads(resp.read())
     except Exception as e:
-        print(f"  [history] Failed for hex {hex_code}: {e}")
-        return []
+        print(f"  [poll] {reg} ({meta['owner']}) — request failed: {e}")
+        return None
 
+    ac_list = raw.get("ac", [])
+    if not ac_list:
+        return None
+
+    ac = ac_list[0]
+
+    # alt_baro can be the string "ground" — normalise to 0
+    alt = ac.get("alt_baro", 0)
+    if alt == "ground":
+        alt = 0
+
+    # Extract trail points — normalise field names for the frontend
+    raw_trail = ac.get("trail", [])
     trail = []
-    for pos in raw.get("ac", [{}])[0].get("trail", []):
-        trail.append({
-            "lat": pos.get("lat"),
-            "lon": pos.get("lon"),
-            "alt": pos.get("alt"),
-            "ts":  pos.get("ts"),
-        })
-    return trail
+    for pt in raw_trail:
+        if pt.get("lat") is not None and pt.get("lon") is not None:
+            trail.append({
+                "lat": pt.get("lat"),
+                "lon": pt.get("lon"),
+                "alt": pt.get("alt", 0),
+                "ts":  pt.get("ts",  0),
+            })
+
+    return {
+        "hex":         ac.get("hex", ""),
+        "tail":        ac.get("r", reg),
+        "callsign":    (ac.get("flight") or "").strip(),
+        "owner":       meta["owner"],
+        "description": meta["description"],
+        "type":        ac.get("t", "Unknown"),
+        "lat":         ac.get("lat", 0),
+        "lon":         ac.get("lon", 0),
+        "altitude":    alt,
+        "speed":       ac.get("gs", 0),
+        "heading":     ac.get("track", 0),
+        "vertical":    ac.get("baro_rate", 0),
+        "squawk":      ac.get("squawk", ""),
+        "seen":        ac.get("seen", 0),
+        "trail":       trail,   # list of recent position points
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+#  BACKGROUND POLLING THREAD
+#
+#  Each time a plane is queried, _plane_cache is updated
+#  immediately — found or missing. The frontend polls
+#  /api/planes which assembles results from _plane_cache,
+#  so each plane appears on the map as soon as it's checked
+#  rather than at the end of the full cycle.
+# ─────────────────────────────────────────────────────────────
+def polling_loop():
+    print("  [poller] Background polling thread started")
+
+    while True:
+        watchlist = load_watchlist()
+
+        if not watchlist:
+            print("  [poller] Watchlist is empty — retrying in 30 s")
+            time.sleep(30)
+            continue
+
+        with _cache_lock:
+            _cycle_meta["status"] = "polling"
+
+        for reg, meta in watchlist.items():
+
+            # Signal which plane is currently being queried
+            with _cache_lock:
+                _cycle_meta["current_reg"] = reg
+
+            print(f"  [poll] Querying {reg} ({meta['owner']})...")
+            plane = fetch_plane_by_reg(reg, meta)
+
+            # ── Update the per-plane cache immediately ──────────
+            # The frontend will see this result on its next poll,
+            # without waiting for the rest of the watchlist.
+            with _cache_lock:
+                if plane:
+                    print(f"  [poll] {reg} → found at {plane['lat']}, {plane['lon']}")
+                    _plane_cache[reg] = {"status": "found",   "data": plane}
+                else:
+                    print(f"  [poll] {reg} → no signal")
+                    _plane_cache[reg] = {
+                        "status": "missing",
+                        "data": {
+                            "tail":        reg,
+                            "owner":       meta["owner"],
+                            "description": meta["description"],
+                        }
+                    }
+
+            time.sleep(POLL_INTERVAL)
+
+        # Full cycle complete — update timestamps
+        now_iso  = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+        next_iso = time.strftime(
+            "%Y-%m-%d %H:%M:%S UTC",
+            time.gmtime(time.time() + CYCLE_WAIT)
+        )
+
+        with _cache_lock:
+            _cycle_meta["last_updated"] = now_iso
+            _cycle_meta["next_cycle"]   = next_iso
+            _cycle_meta["status"]       = "waiting"
+            _cycle_meta["current_reg"]  = None
+
+        found_count   = sum(1 for v in _plane_cache.values() if v["status"] == "found")
+        missing_count = sum(1 for v in _plane_cache.values() if v["status"] == "missing")
+        print(f"  [poller] Cycle complete — {found_count} found, "
+              f"{missing_count} missing. Next cycle at {next_iso}")
+
+        time.sleep(CYCLE_WAIT)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -246,6 +219,7 @@ def fetch_real_history(hex_code):
 
 @app.route("/")
 def index():
+    """Serve the single-page frontend."""
     with open("index.html", "r", encoding="utf-8") as f:
         return render_template_string(f.read())
 
@@ -254,34 +228,60 @@ def index():
 def api_planes():
     """
     GET /api/planes
-    Returns:
-      planes   — aircraft with live ADS-B positions
-      missing  — aircraft not currently transmitting (includes icao for last-known lookup)
+    Assembles the current state of every plane from _plane_cache.
+    Because _plane_cache is updated one plane at a time as the
+    poller runs, the frontend gets the latest known result for
+    each plane immediately — found planes appear on the map as
+    soon as they're polled, not at end of cycle.
     """
-    watchlist      = load_watchlist()
-    found, missing = fetch_watched_planes(watchlist)
-    return jsonify({"planes": found, "missing": missing, "source": "real"})
+    with _cache_lock:
+        planes  = [v["data"] for v in _plane_cache.values() if v["status"] == "found"]
+        missing = [v["data"] for v in _plane_cache.values() if v["status"] == "missing"]
+
+        return jsonify({
+            "planes":       planes,
+            "missing":      missing,
+            "last_updated": _cycle_meta["last_updated"],
+            "next_cycle":   _cycle_meta["next_cycle"],
+            "status":       _cycle_meta["status"],
+            "current_reg":  _cycle_meta["current_reg"],
+            "source":       "airplanes.live",
+        })
 
 
-@app.route("/api/history/<hex_code>")
-def api_history(hex_code):
-    """GET /api/history/<hex> — recent ADS-B trail from ADS-B Exchange."""
-    trail = fetch_real_history(hex_code)
-    return jsonify({"hex": hex_code, "trail": trail})
-
-
-@app.route("/api/last_known/<icao_hex>")
-def api_last_known(icao_hex):
+@app.route("/api/status")
+def api_status():
     """
-    GET /api/last_known/<icao>
-    Returns the most recent state vector OpenSky has for this aircraft.
-    Used to show a grey "last seen" pin for grounded/offline planes.
+    GET /api/status
+    Lightweight endpoint — just the poller state, no plane data.
+    Used by the frontend to update the status dot/countdown
+    without re-fetching the full plane list.
     """
-    position = fetch_last_known_position(icao_hex)
-    if position:
-        return jsonify({"found": True,  "position": position})
-    else:
-        return jsonify({"found": False, "position": None})
+    with _cache_lock:
+        return jsonify({
+            "status":       _cycle_meta["status"],
+            "current_reg":  _cycle_meta["current_reg"],
+            "last_updated": _cycle_meta["last_updated"],
+            "next_cycle":   _cycle_meta["next_cycle"],
+        })
+
+
+@app.route("/api/trail/<reg>")
+def api_trail(reg):
+    """
+    GET /api/trail/<registration>
+    Returns the trail points stored in the cache for one plane.
+    The trail comes from the airplanes.live response and covers
+    the last few minutes of flight.
+    """
+    with _cache_lock:
+        entry = _plane_cache.get(reg.upper())
+
+    if not entry or entry["status"] != "found":
+        return jsonify({"reg": reg, "trail": []})
+
+    trail = entry["data"].get("trail", [])
+    return jsonify({"reg": reg, "trail": trail})
 
 
 # ─────────────────────────────────────────────────────────────
@@ -293,7 +293,14 @@ if __name__ == "__main__":
     print("  Plane Tracker — running at http://127.0.0.1:5000")
     print(f"  Watching {len(wl)} planes from {CSV_PATH}")
     for reg, meta in wl.items():
-        icao_str = f"  ICAO: {meta['icao']}" if meta['icao'] else "  ICAO: not set"
-        print(f"    {reg:12}  {meta['owner']:20} {icao_str}")
+        print(f"    {reg:12}  {meta['owner']}")
+    print(f"  Poll interval : {POLL_INTERVAL}s per plane")
+    print(f"  Cycle wait    : {CYCLE_WAIT}s between cycles")
     print("=" * 55)
-    app.run(debug=True, host="0.0.0.0", port=5000)
+
+    poller = threading.Thread(target=polling_loop, daemon=True)
+    poller.start()
+
+    # use_reloader=False is required — the default reloader forks
+    # the process which would start a second polling thread
+    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=False)

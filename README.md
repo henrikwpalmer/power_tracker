@@ -34,16 +34,17 @@ plane-tracker/
 ---
 
 
-## ADS-B Exchange API — Field Reference
+## Airplane.live API — Field Reference
+Endpoints
 
 | Field | Meaning |
 |---|---|
 | `hex` | ICAO 24-bit address (unique per aircraft) |
-| `r` | Registration / tail number |
-| `flight` | Callsign |
-| `t` | Aircraft type (ICAO code, e.g. `B738`) |
-| `ownOp` | Registered owner / operator |
-| `orig` / `dest` | Origin / destination IATA codes |
+| `reg` | Registration / tail number |
+| `callsign` | Callsign |
+| `type` | Aircraft type (ICAO code, e.g. `B738`) |
+| `mil` | returns all aircraft tagged as military |
+| `ladd` | returns aircraft tagged as LADD |
 | `lat` / `lon` | Current position |
 | `alt_baro` | Barometric altitude in feet |
 | `gs` | Ground speed in knots |
