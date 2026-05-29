@@ -115,6 +115,28 @@
 
     #sb-spacer { flex: 1; min-height: 8px; }
 
+    /* ── Replay-mode sidebar ──────────────────────────────── */
+    #sb-replay-section { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+    /* Hide live sections when in replay */
+    #sidebar.replay-mode > .sb-section-title,
+    #sidebar.replay-mode #sb-found-list,
+    #sidebar.replay-mode #sb-spacer,
+    #sidebar.replay-mode #sb-missing-section { display: none; }
+    #sidebar.replay-mode #sb-replay-section { display: flex; }
+
+    .sb-row.replay-row { cursor: pointer; }
+    .sb-ts { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: #8a6a40; letter-spacing: 1px; }
+
+    /* Mode banner at top of sidebar */
+    #sb-mode-banner {
+      padding: 6px 14px; flex-shrink: 0;
+      font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+      font-family: 'Share Tech Mono', monospace;
+      border-bottom: 1px solid var(--panel-border);
+    }
+    #sb-mode-banner.live   { color: var(--good);  background: rgba(57,255,138,0.06); }
+    #sb-mode-banner.replay { color: #ffaa44; background: rgba(255,170,68,0.08); }
+
     /* ── Map ───────────────────────────────────────────────── */
     #map { flex: 1; position: relative; }
 
@@ -174,15 +196,6 @@
     .vr-down { color: var(--accent2); }
     .vr-lvl  { color: var(--text-dim); }
 
-    #trail-btn {
-      margin-top: 8px; background: rgba(0,212,255,0.08);
-      border: 1px solid var(--accent); color: var(--accent); padding: 7px;
-      border-radius: 4px; cursor: pointer; font-family: inherit;
-      font-size: 13px; font-weight: 600; letter-spacing: 1px; transition: all .2s;
-    }
-    #trail-btn:hover { background: rgba(0,212,255,0.18); }
-    #trail-btn.active { background: var(--accent); color: var(--bg); }
-
     /* ── Legend ────────────────────────────────────────────── */
     #legend {
       position: absolute; bottom: 22px; left: 14px;
@@ -218,6 +231,44 @@
       backdrop-filter: blur(8px);
     }
 
+    #timeline-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    #date-picker {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      color: var(--text);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+    }
+    /* Hide the native "Löschen" / "Heute" buttons that browsers add to
+       date pickers — the LIVE button serves that purpose instead. */
+    #date-picker::-webkit-calendar-picker-indicator { cursor: pointer; }
+    #date-picker::-webkit-clear-button,
+    #date-picker::-webkit-inner-spin-button { display: none; }
+    /* Firefox hides them automatically when min/max are set; no extra rule needed */
+
+    #live-btn {
+      background: rgba(0,212,255,0.08);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 4px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 1px;
+      transition: all .2s;
+    }
+    #live-btn:hover { background: rgba(0,212,255,0.18); }
+    #live-btn.active { background: var(--accent); color: var(--bg); }
+
     #timeline {
       width: 100%;
     }
@@ -230,6 +281,14 @@
       font-size: 12px;
     }
 
+    #timeline-ticks {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: 'Share Tech Mono', monospace;
+    }
 
   </style>
 </head>
@@ -255,12 +314,18 @@
 
   <!-- Sidebar -->
   <div id="sidebar">
+    <div id="sb-mode-banner" class="live">● LIVE</div>
     <div class="sb-section-title">● AIRBORNE</div>
     <div class="sb-list" id="sb-found-list"></div>
     <div id="sb-spacer"></div>
     <div id="sb-missing-section">
       <div class="sb-section-title">○ NOT DETECTED</div>
       <div class="sb-list" id="sb-missing-list"></div>
+    </div>
+    <!-- Replay section — shown only in timeline mode -->
+    <div id="sb-replay-section">
+      <div class="sb-list" id="sb-replay-list"></div>
+      <div id="sb-spacer-replay" style="flex:1;min-height:8px"></div>
     </div>
   </div>
 
@@ -320,20 +385,34 @@
           <span class="data-value" id="p-squawk">—</span>
         </div>
 
-        <button id="trail-btn" onclick="toggleTrail()">SHOW FLIGHT PATH</button>
       </div>
     </div>
 
     <!-- Legend -->
     <div id="legend">
-      <div class="leg-row"><div class="leg-dot" style="background:#39ff8a"></div> Climbing</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#00d4ff"></div> Level flight</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#ff6b35"></div> Descending</div>
       <div class="leg-row"><div class="leg-dot" style="background:#6a7a8a;border:1px solid #8a9aaa"></div> Last known pos.</div>
     </div>
 
   </div><!-- /#map -->
 </div><!-- /#shell -->
+
+<!-- ── Timeline — placed BEFORE </body> so DOM is ready when scripts run ── -->
+<div id="timeline-container">
+  <div id="timeline-controls">
+    <input type="date" id="date-picker" />
+    <button id="live-btn" class="active">LIVE</button>
+  </div>
+  <input
+    type="range"
+    id="timeline"
+    min="0"
+    max="1440"
+    step="1"
+    value="720"
+  />
+  <div id="timeline-ticks"></div>
+  <div id="timeline-label">LIVE</div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -352,67 +431,116 @@ L.tileLayer(
 // ============================================================
 let planeMarkers     = {};   // hex → Leaflet marker  (live, coloured)
 let lastKnownMarkers = {};   // icao → Leaflet marker (grey, last-seen)
-let historyLayers = {};
-let trailVisible     = false;
 let selectedHex      = null;
 let selectedIcao     = null; // set when a last-known pin is selected
 let planesData       = [];
 let missingData      = [];
 let showLastKnown    = false; // controlled by the header toggle
-let selectedDay = null;
-let dayStartTs  = null;
-let dayEndTs    = null;
-let replayMode = false;
+let selectedDay      = null;
+let dayStartTs       = null;
+let dayEndTs         = null;
+// FIX: replayMode starts false; set true when slider is moved, false when LIVE is clicked.
+let replayMode       = false;
+
+// ============================================================
+//  PER-PLANE COLOUR ASSIGNMENT
+//  Stable: the same tail always gets the same colour across
+//  live refreshes, timeline scrubs, and panel opens.
+// ============================================================
+const PLANE_PALETTE = [
+  '#00d4ff', // cyan
+  '#39ff8a', // green
+  '#ff9f1c', // amber
+  '#c77dff', // purple
+  '#ff6b6b', // coral
+  '#4ecdc4', // teal
+  '#ffe66d', // yellow
+  '#ff6fd8', // pink
+];
+const planeColourMap = {}; // tail → colour
+let   colourIndex    = 0;
+
+function getPlaneColour(tail) {
+  if (!planeColourMap[tail]) {
+    planeColourMap[tail] = PLANE_PALETTE[colourIndex % PLANE_PALETTE.length];
+    colourIndex++;
+  }
+  return planeColourMap[tail];
+}
 
 // ============================================================
 //  Initializing the date picker to today's date and setting up the timeline slider
 // ============================================================
 
 function initializeDatePicker() {
-
   const picker = document.getElementById('date-picker');
-
-  const today = new Date();
-
-  const yyyy = today.getFullYear();
-  const mm   = String(today.getMonth() + 1).padStart(2, '0');
-  const dd   = String(today.getDate()).padStart(2, '0');
-
+  const today  = new Date();
+  const yyyy   = today.getFullYear();
+  const mm     = String(today.getMonth() + 1).padStart(2, '0');
+  const dd     = String(today.getDate()).padStart(2, '0');
   const dateStr = `${yyyy}-${mm}-${dd}`;
-
   picker.value = dateStr;
-
+  picker.max   = dateStr;   // prevents selecting future dates
   updateSelectedDay(dateStr);
 }
 
+
+// ============================================================
+//  Building the labels under the timeline slider
+//  (00:00, 06:00, 12:00, 18:00, 24:00)
+// ============================================================
+
+function buildTimelineTicks() {
+  const el = document.getElementById('timeline-ticks');
+  // FIX: was skipping the last label in the loop then adding "24:00" a second time.
+  //      Now all 5 labels are rendered uniformly in one loop.
+  const labels = ["00:00", "06:00", "12:00", "18:00", "24:00"];
+  el.innerHTML = "";
+  labels.forEach(text => {
+    const span = document.createElement("div");
+    span.textContent = text;
+    el.appendChild(span);
+  });
+}
 
 // ============================================================
 //  Convert selected day into timestamps
 // ============================================================
 
 function updateSelectedDay(dateStr) {
-
   selectedDay = dateStr;
-
   const start = new Date(dateStr + "T00:00:00");
   const end   = new Date(dateStr + "T23:59:59");
+  dayStartTs  = Math.floor(start.getTime() / 1000);
+  dayEndTs    = Math.floor(end.getTime()   / 1000);
+  clampSliderToNow();
+}
 
-  dayStartTs = Math.floor(start.getTime() / 1000);
-  dayEndTs   = Math.floor(end.getTime() / 1000);
+function clampSliderToNow() {
+  const slider = document.getElementById('timeline');
+  const today  = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  if (selectedDay === todayStr) {
+    const maxMinutes = today.getHours() * 60 + today.getMinutes();
+    slider.max = maxMinutes;
+    // If the thumb is beyond now, pull it back
+    if (parseInt(slider.value) > maxMinutes) slider.value = maxMinutes;
+  } else {
+    slider.max = 1440;
+  }
+}
 
+function formatTimeFromMinutes(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
 
-
-
 // ============================================================
-//  PLANE ICON — coloured, for live planes
+//  PLANE ICON — uses the plane's assigned colour
 // ============================================================
-function makePlaneIcon(heading, verticalRate) {
-  const colour =
-    verticalRate >  100 ? '#39ff8a' :
-    verticalRate < -100 ? '#ff6b35' : '#00d4ff';
-
+function makePlaneIcon(heading, colour) {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
       <g transform="rotate(${heading}, 14, 14)">
@@ -427,8 +555,6 @@ function makePlaneIcon(heading, verticalRate) {
 
 // ============================================================
 //  LAST-KNOWN ICON — muted grey, for grounded/offline planes
-//  Uses a simpler dot + direction tick so it's visually
-//  distinct from the live coloured icons.
 // ============================================================
 function makeLastKnownIcon(heading) {
   const svg = `
@@ -447,73 +573,18 @@ function makeLastKnownIcon(heading) {
 // ============================================================
 //  TOGGLE — show/hide last-known positions
 // ============================================================
-
-
-const PLANE_COLORS = [
-  '#ff6b6b',
-  '#4ecdc4',
-  '#ffe66d',
-  '#00d4ff',
-  '#c77dff',
-  '#39ff8a',
-  '#ff9f1c'
-];
-
-function getPlaneColor(index) {
-  return PLANE_COLORS[index % PLANE_COLORS.length];
-}
-
-async function drawHistoryTrail(plane, color) {
-
-  try {
-
-    const resp = await fetch(`/api/history_db/${plane.tail}`);
-    const data = await resp.json();
-
-    const history = data.history;
-
-    if (!history || history.length < 2) return;
-
-    // Convert DB rows into Leaflet coordinates
-    const coords = history.map(p => [p.lat, p.lon]);
-
-    // Draw line
-    const polyline = L.polyline(coords, {
-      color: color,
-      weight: 3,
-      opacity: 0.8,
-      smoothFactor: 1
-    }).addTo(map);
-
-    // Save reference so we can clear/update later
-    historyLayers[plane.tail] = polyline;
-
-  } catch(err) {
-    console.error("Failed to load history:", err);
-  }
-}
-
-
-
-
-// ============================================================
-//  TOGGLE — show/hide last-known positions
-// ============================================================
 function toggleLastKnown() {
   showLastKnown = !showLastKnown;
   const toggle = document.getElementById('last-known-toggle');
   toggle.classList.toggle('active', showLastKnown);
 
   if (showLastKnown) {
-    // Load last-known positions for all missing planes that have an ICAO
     loadAllLastKnown();
   } else {
-    // Remove all grey markers from the map
     clearLastKnownMarkers();
   }
 }
 
-// Remove every grey marker
 function clearLastKnownMarkers() {
   for (const icao of Object.keys(lastKnownMarkers)) {
     map.removeLayer(lastKnownMarkers[icao]);
@@ -521,7 +592,6 @@ function clearLastKnownMarkers() {
   lastKnownMarkers = {};
 }
 
-// Fetch and place last-known pins for all missing planes
 async function loadAllLastKnown() {
   for (const plane of missingData) {
     if (!plane.icao) continue;
@@ -529,9 +599,8 @@ async function loadAllLastKnown() {
   }
 }
 
-// Fetch last-known for one plane and place the grey marker
 async function loadLastKnownForPlane(plane) {
-  if (!plane.icao || lastKnownMarkers[plane.icao]) return; // already loaded
+  if (!plane.icao || lastKnownMarkers[plane.icao]) return;
 
   try {
     const resp = await fetch(`/api/last_known/${plane.icao}`);
@@ -541,15 +610,12 @@ async function loadLastKnownForPlane(plane) {
 
     const pos    = data.position;
     const icon   = makeLastKnownIcon(pos.heading || 0);
-    const marker = L.marker([pos.lat, pos.lon], { icon, zIndexOffset: -100 })
-      .addTo(map);
+    const marker = L.marker([pos.lat, pos.lon], { icon, zIndexOffset: -100 }).addTo(map);
 
-    // Format the last-contact timestamp into a readable string
     const lastSeen = pos.last_contact
       ? new Date(pos.last_contact * 1000).toUTCString()
       : 'Unknown';
 
-    // Tooltip on hover
     marker.bindTooltip(
       `<b style="color:#8a9aaa">${plane.owner}</b> <span style="color:#5a7080">(last known)</span>
        <br/>${plane.tail} · ${pos.on_ground ? 'On ground' : 'Airborne'}
@@ -557,12 +623,8 @@ async function loadLastKnownForPlane(plane) {
       { direction: 'top', offset: [0, -12] }
     );
 
-    // Click opens a "last known" variant of the detail panel
     marker.on('click', () => openLastKnownPanel(plane, pos, lastSeen));
-
     lastKnownMarkers[plane.icao] = marker;
-
-    // Update sidebar row to show the grey badge and become clickable
     updateMissingSidebarRow(plane, pos, lastSeen);
 
   } catch (err) {
@@ -570,7 +632,6 @@ async function loadLastKnownForPlane(plane) {
   }
 }
 
-// Update a missing sidebar row once last-known data arrives
 function updateMissingSidebarRow(plane, pos, lastSeen) {
   const rowId = `sb-missing-${plane.tail.replace(/\W/g, '')}`;
   const row   = document.getElementById(rowId);
@@ -578,16 +639,14 @@ function updateMissingSidebarRow(plane, pos, lastSeen) {
 
   row.classList.add('has-lastknown');
 
-  // Add grey badge next to NO SIGNAL
   const regEl = row.querySelector('.sb-reg');
   if (regEl && !regEl.querySelector('.sb-lastknown-badge')) {
     const badge = document.createElement('span');
-    badge.className = 'sb-lastknown-badge';
+    badge.className  = 'sb-lastknown-badge';
     badge.textContent = '· LAST KNOWN';
     regEl.appendChild(badge);
   }
 
-  // Make it pan to the grey pin on click
   row.onclick = () => {
     map.panTo([pos.lat, pos.lon], { animate: true, duration: 0.5 });
     openLastKnownPanel(plane, pos, lastSeen);
@@ -597,33 +656,26 @@ function updateMissingSidebarRow(plane, pos, lastSeen) {
 
 // ============================================================
 //  OPEN LAST-KNOWN PANEL
-//  A read-only variant of the detail panel; no trail button.
 // ============================================================
 function openLastKnownPanel(plane, pos, lastSeen) {
   selectedHex  = null;
   selectedIcao = plane.icao;
-  clearTrailLayers();
 
-  // Style panel header in grey
   document.getElementById('panel-header').className     = 'lastknown-header';
   document.getElementById('panel-callsign').textContent = plane.tail;
   document.getElementById('panel-callsign').className   = 'lastknown';
   document.getElementById('panel-type').textContent     = `ICAO: ${plane.icao.toUpperCase()}`;
 
-  // Show last-known notice
   const notice = document.getElementById('panel-lastknown-notice');
   notice.style.display = 'block';
   notice.textContent   = `⊙ LAST KNOWN  ·  ${lastSeen}`;
 
-  // Owner box in grey
-  document.getElementById('panel-owner-box').className  = 'lastknown';
+  document.getElementById('panel-owner-box').className    = 'lastknown';
   document.getElementById('panel-owner-name').textContent = plane.owner       || '—';
   document.getElementById('panel-owner-desc').textContent = plane.description || '—';
 
-  // Route unknown for last-known
-  document.getElementById('p-origin').textContent = '???';
-  document.getElementById('p-dest').textContent   = '???';
-
+  document.getElementById('p-origin').textContent  = '???';
+  document.getElementById('p-dest').textContent    = '???';
   document.getElementById('p-tail').textContent    = plane.tail;
   document.getElementById('p-atype').textContent   = '—';
   document.getElementById('p-alt').textContent     = pos.altitude ? `${pos.altitude.toLocaleString()} ft` : '—';
@@ -631,12 +683,7 @@ function openLastKnownPanel(plane, pos, lastSeen) {
   document.getElementById('p-heading').textContent = pos.heading  ? `${pos.heading}°`  : '—';
   document.getElementById('p-squawk').textContent  = '—';
 
-  // Hide vertical-rate row (not meaningful for last-known)
-  document.getElementById('row-vr').style.display = 'none';
-
-  // Hide trail button (no hex for ADS-B Exchange trail)
-  document.getElementById('trail-btn').style.display = 'none';
-
+  document.getElementById('row-vr').style.display    = 'none';
   document.getElementById('detail-panel').classList.add('open');
 }
 
@@ -652,12 +699,13 @@ function renderFoundList(planes) {
     return;
   }
   planes.forEach(p => {
+    const colour = getPlaneColour(p.tail);
     const row = document.createElement('div');
     row.className = 'sb-row';
     row.id = `sb-row-${p.hex}`;
     row.innerHTML = `
-      <div class="sb-owner">${p.owner || p.tail}</div>
-      <div class="sb-reg">${p.tail}${p.callsign ? ' · ' + p.callsign : ''}</div>
+      <div class="sb-owner" style="color:${colour}">${p.owner || p.tail}</div>
+      <div class="sb-reg" style="color:${colour};opacity:0.75">${p.tail}${p.callsign ? ' · ' + p.callsign : ''}</div>
       <div class="sb-desc">${p.description || ''}</div>`;
     row.addEventListener('click', () => selectPlane(p.hex));
     el.appendChild(row);
@@ -672,10 +720,10 @@ function renderMissingList(missing) {
     return;
   }
   missing.forEach(m => {
-    const row = document.createElement('div');
+    const row    = document.createElement('div');
     const safeId = m.tail.replace(/\W/g, '');
     row.className = 'sb-row missing';
-    row.id = `sb-missing-${safeId}`;
+    row.id        = `sb-missing-${safeId}`;
     row.innerHTML = `
       <div class="sb-owner">${m.owner || m.tail}</div>
       <div class="sb-reg">${m.tail} <span class="sb-missing-badge">NO SIGNAL</span></div>
@@ -692,17 +740,10 @@ function setSidebarActive(hex) {
 
 
 // ============================================================
-//  LOAD PLANES — main data fetch
+//  LOAD PLANES — main data fetch (live mode only)
 // ============================================================
 async function loadPlanes() {
-
   if (replayMode) return;
-
-  // CLEAR OLD HISTORY LINES (IMPORTANT)
-  for (const layer of Object.values(historyLayers)) {
-    map.removeLayer(layer);
-  }
-  historyLayers = {};
 
   try {
     const resp = await fetch('/api/planes');
@@ -714,49 +755,32 @@ async function loadPlanes() {
       data.source === 'real' ? 'LIVE ADS-B' : 'MOCK DATA';
     document.getElementById('count').textContent = planesData.length;
 
-    // Remove stale live markers
-    const freshHexes = new Set(planesData.map(p => p.hex));
-    for (const hex of Object.keys(planeMarkers)) {
-      if (!freshHexes.has(hex)) { map.removeLayer(planeMarkers[hex]); delete planeMarkers[hex]; }
+    // Clear ALL markers — this handles both stale live markers AND any
+    // leftover snapshot markers (keyed by tail) from replay mode.
+    for (const key of Object.keys(planeMarkers)) {
+      map.removeLayer(planeMarkers[key]);
     }
+    planeMarkers = {};
 
-    // Add / update live markers
-planesData.forEach((plane, i) => {
+    // Add live markers with per-plane colour
+    planesData.forEach((plane) => {
+      const colour = getPlaneColour(plane.tail);
+      const icon   = makePlaneIcon(plane.heading, colour);
+      const marker = L.marker([plane.lat, plane.lon], { icon })
+        .addTo(map)
+        .on('click', () => selectPlane(plane.hex));
 
-  const icon = makePlaneIcon(plane.heading, plane.vertical);
-
-  if (planeMarkers[plane.hex]) {
-
-    planeMarkers[plane.hex]
-      .setLatLng([plane.lat, plane.lon])
-      .setIcon(icon);
-
-  } else {
-
-    const marker = L.marker([plane.lat, plane.lon], { icon })
-      .addTo(map)
-      .on('click', () => selectPlane(plane.hex));
-
-    marker.bindTooltip(
-      `<b>${plane.callsign || plane.tail}</b>`,
-      { direction: 'top' }
-    );
-
-    planeMarkers[plane.hex] = marker;
-  }
-
-  // ADD THIS HERE:
-  const color = getPlaneColor(i);
-  drawHistoryTrail(plane, color);
-
-});
+      marker.bindTooltip(
+        `<b style="color:${colour}">${plane.callsign || plane.tail}</b>`,
+        { direction: 'top' }
+      );
+      planeMarkers[plane.hex] = marker;
+    });
 
     renderFoundList(planesData);
     renderMissingList(missingData);
 
-    // If last-known is toggled on, refresh grey pins for any new missing planes
     if (showLastKnown) {
-      // Clear old grey markers first (plane list may have changed)
       clearLastKnownMarkers();
       loadAllLastKnown();
     }
@@ -775,21 +799,25 @@ planesData.forEach((plane, i) => {
 function selectPlane(hex) {
   selectedHex  = hex;
   selectedIcao = null;
-  trailVisible = false;
 
   const plane = planesData.find(p => p.hex === hex);
   if (!plane) return;
 
-  // Reset panel to live styling
-  document.getElementById('panel-header').className     = '';
-  document.getElementById('panel-callsign').className   = '';
-  document.getElementById('panel-owner-box').className  = '';
-  document.getElementById('panel-lastknown-notice').style.display = 'none';
-  document.getElementById('row-vr').style.display       = '';
-  document.getElementById('trail-btn').style.display    = '';
+  const colour = getPlaneColour(plane.tail);
 
-  document.getElementById('panel-callsign').textContent = plane.callsign || plane.tail || 'N/A';
-  document.getElementById('panel-type').textContent     = `${plane.type} · ${plane.hex.toUpperCase()}`;
+  // Apply colour to panel header accent
+  document.getElementById('panel-header').className   = '';
+  document.getElementById('panel-header').style.borderBottom = `2px solid ${colour}`;
+  document.getElementById('panel-callsign').className = '';
+  document.getElementById('panel-callsign').style.color = colour;
+  document.getElementById('panel-owner-box').className = '';
+  document.getElementById('panel-owner-box').style.borderColor = colour + '55';
+  document.getElementById('panel-owner-box').style.background  = colour + '0d';
+  document.getElementById('panel-lastknown-notice').style.display = 'none';
+  document.getElementById('row-vr').style.display = '';
+
+  document.getElementById('panel-callsign').textContent   = plane.callsign || plane.tail || 'N/A';
+  document.getElementById('panel-type').textContent       = `${plane.type} · ${plane.hex.toUpperCase()}`;
   document.getElementById('panel-owner-name').textContent = plane.owner       || 'Unknown';
   document.getElementById('panel-owner-desc').textContent = plane.description || '';
   document.getElementById('p-origin').textContent  = plane.origin      || '???';
@@ -801,137 +829,194 @@ function selectPlane(hex) {
   document.getElementById('p-heading').textContent = `${plane.heading}°`;
   document.getElementById('p-squawk').textContent  = plane.squawk || '—';
 
-  const vr    = plane.vertical;
-  const vrEl  = document.getElementById('p-vr');
+  const vr   = plane.vertical;
+  const vrEl = document.getElementById('p-vr');
   vrEl.textContent = `${vr > 100 ? '▲' : vr < -100 ? '▼' : '→'} ${Math.abs(vr)} fpm`;
   vrEl.className   = `data-value ${vr > 100 ? 'vr-up' : vr < -100 ? 'vr-down' : 'vr-lvl'}`;
-
-  document.getElementById('trail-btn').textContent = 'SHOW FLIGHT PATH';
-  document.getElementById('trail-btn').classList.remove('active');
-  clearTrailLayers();
 
   document.getElementById('detail-panel').classList.add('open');
   setSidebarActive(hex);
   map.panTo([plane.lat, plane.lon], { animate: true, duration: 0.5 });
 }
 
-// ============================================================
-//  No idea what this does and why its supposed to be in this spot (timeline related)
-// ============================================================
 
+// ============================================================
+//  SIDEBAR MODE SWITCH
+// ============================================================
+function setSidebarMode(mode) {
+  const sidebar = document.getElementById('sidebar');
+  const banner  = document.getElementById('sb-mode-banner');
+  if (mode === 'replay') {
+    sidebar.classList.add('replay-mode');
+    banner.className   = 'replay';
+    banner.textContent = '⏪ REPLAY MODE';
+  } else {
+    sidebar.classList.remove('replay-mode');
+    banner.className   = 'live';
+    banner.textContent = '● LIVE';
+  }
+}
+
+
+// ============================================================
+//  DATE PICKER — update day range, stay in replay mode if already there
+// ============================================================
 document.getElementById('date-picker')
   .addEventListener('change', (e) => {
     updateSelectedDay(e.target.value);
+    // If the slider is not at "live" position, reload the snapshot for new day
+    const minuteOfDay = parseInt(document.getElementById('timeline').value);
+    if (replayMode) {
+      const ts = dayStartTs + minuteOfDay * 60;
+      loadSnapshot(ts);
+    }
   });
 
+
+// ============================================================
+//  TIMELINE SLIDER
+//  FIX: sets replayMode = true so loadPlanes() stops overwriting results,
+//       and updates the LIVE button appearance.
+// ============================================================
 document.getElementById('timeline')
   .addEventListener('input', async (e) => {
-
-    replayMode = true;
-
     const minuteOfDay = parseInt(e.target.value);
-
     const ts = dayStartTs + minuteOfDay * 60;
 
+    // Enter replay mode
+    replayMode = true;
+    setSidebarMode('replay');
+    document.getElementById('live-btn').classList.remove('active');
+    document.getElementById('timeline-label').textContent =
+      formatTimeFromMinutes(minuteOfDay);
+    closePanel();
     loadSnapshot(ts);
   });
 
+
+
 // ============================================================
-//  TRAIL
+//  LOAD SNAPSHOT (time-slider / replay mode)
+//  Uses `tail` as the marker key because the DB always has it,
+//  whereas `hex` can be empty/null and caused markers to pile up
+//  under planeMarkers[undefined] and never get cleared.
 // ============================================================
-async function drawTrail(hex) {
-  clearTrailLayers();
-  try {
-    const resp  = await fetch(`/api/history/${hex}`);
-    const data  = await resp.json();
-    const trail = data.trail;
-    if (!trail || trail.length < 2) return;
-
-    for (let i = 0; i < trail.length - 1; i++) {
-      const opacity = 0.15 + (i / trail.length) * 0.85;
-      const weight  = 1   + (i / trail.length) * 2.5;
-      L.polyline(
-        [[trail[i].lat, trail[i].lon],[trail[i+1].lat, trail[i+1].lon]],
-        { color: '#00d4ff', weight, opacity, lineJoin: 'round' }
-      ).addTo(map);
-    }
-    L.circleMarker([trail[0].lat, trail[0].lon], {
-      radius: 4, color: '#00d4ff', fillColor: '#00d4ff', fillOpacity: 0.3, weight: 1,
-    }).addTo(map).bindTooltip('Trail start');
-  } catch (err) {
-    console.error('Trail error:', err);
-  }
-}
-
-function clearTrailLayers() {
-  map.eachLayer(layer => {
-    if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) map.removeLayer(layer);
-  });
-}
-
-function toggleTrail() {
-  const btn = document.getElementById('trail-btn');
-  if (!selectedHex) return;
-  if (!trailVisible) {
-    drawTrail(selectedHex);
-    btn.textContent = 'HIDE FLIGHT PATH';
-    btn.classList.add('active');
-    trailVisible = true;
-  } else {
-    clearTrailLayers();
-    btn.textContent = 'SHOW FLIGHT PATH';
-    btn.classList.remove('active');
-    trailVisible = false;
-  }
-}
-
 async function loadSnapshot(timestamp) {
-
   try {
-
     const resp = await fetch(`/api/snapshot?ts=${timestamp}`);
     const data = await resp.json();
-
     const planes = data.planes;
 
-    for (const hex of Object.keys(planeMarkers)) {
-      map.removeLayer(planeMarkers[hex]);
+    // Clear all existing markers (keyed by tail in snapshot mode)
+    for (const key of Object.keys(planeMarkers)) {
+      map.removeLayer(planeMarkers[key]);
     }
-
-    clearLastKnownMarkers();
-    
     planeMarkers = {};
+    clearLastKnownMarkers();
 
-    // Draw historical snapshot
-    planes.forEach((plane, i) => {
-
-      const icon = makePlaneIcon(
-        plane.heading || 0,
-        plane.vertical || 0
-      );
-
-      const marker = L.marker(
-        [plane.lat, plane.lon],
-        { icon }
-      ).addTo(map);
-
-      planeMarkers[plane.hex] = marker;
-
+    planes.forEach((plane) => {
+      const colour = getPlaneColour(plane.tail);
+      const icon   = makePlaneIcon(plane.heading || 0, colour);
+      const marker = L.marker([plane.lat, plane.lon], { icon })
+        .addTo(map)
+        .on('click', () => selectSnapshotPlane(plane));
+      marker.bindTooltip(`<b style="color:${colour}">${plane.tail}</b><br/><span style="color:#8a9aaa">${plane.owner || ''}</span>`, { direction: 'top' });
+      planeMarkers[plane.tail] = marker;
     });
 
-    // Update label
-    const date = new Date(timestamp * 1000);
+    renderSnapshotSidebar(planes, timestamp);
 
+    // Update label with full date+time
+    const date = new Date(timestamp * 1000);
     document.getElementById('timeline-label').textContent =
-      date.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit'
-      })
+      date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   } catch(err) {
     console.error(err);
   }
 }
+
+
+// ============================================================
+//  RENDER SNAPSHOT SIDEBAR
+//  Replaces the live AIRBORNE / NOT DETECTED layout with a flat
+//  list of planes that were recorded near the selected time.
+// ============================================================
+function renderSnapshotSidebar(planes, timestamp) {
+  const el = document.getElementById('sb-replay-list');
+  el.innerHTML = '';
+
+  if (!planes.length) {
+    el.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">No data recorded for this time</div>';
+    return;
+  }
+
+  planes.forEach(plane => {
+    const colour = getPlaneColour(plane.tail);
+    const row = document.createElement('div');
+    row.className = 'sb-row replay-row';
+    row.id = `sb-snap-${(plane.tail || '').replace(/\W/g, '')}`;
+
+    const seenAgo = timestamp - plane.timestamp;
+    const seenStr = seenAgo < 90
+      ? 'just now'
+      : `${Math.round(seenAgo / 60)} min ago`;
+
+    row.innerHTML = `
+      <div class="sb-owner" style="color:${colour}">${plane.owner || plane.tail}</div>
+      <div class="sb-reg" style="color:${colour};opacity:0.75">${plane.tail} <span style="color:#5a7080">·</span> ${Math.round(plane.altitude || 0).toLocaleString()} ft</div>
+      <div class="sb-ts">RECORDED ${seenStr.toUpperCase()}</div>`;
+
+    row.addEventListener('click', () => {
+      map.panTo([plane.lat, plane.lon], { animate: true, duration: 0.5 });
+      selectSnapshotPlane(plane);
+    });
+    el.appendChild(row);
+  });
+}
+
+
+// ============================================================
+//  SELECT SNAPSHOT PLANE — opens detail panel with DB data
+// ============================================================
+function selectSnapshotPlane(plane) {
+  selectedHex  = null;
+  selectedIcao = null;
+
+  const colour = getPlaneColour(plane.tail);
+
+  document.getElementById('panel-header').className       = '';
+  document.getElementById('panel-header').style.borderBottom = `2px solid ${colour}`;
+  document.getElementById('panel-callsign').className     = '';
+  document.getElementById('panel-callsign').style.color   = colour;
+  document.getElementById('panel-owner-box').className    = '';
+  document.getElementById('panel-owner-box').style.borderColor = colour + '55';
+  document.getElementById('panel-owner-box').style.background  = colour + '0d';
+  document.getElementById('panel-lastknown-notice').style.display = 'none';
+  document.getElementById('row-vr').style.display         = 'none';
+
+  document.getElementById('panel-callsign').textContent   = plane.tail || 'N/A';
+  document.getElementById('panel-type').textContent       = plane.hex ? plane.hex.toUpperCase() : '—';
+  document.getElementById('panel-owner-name').textContent = plane.owner || 'Unknown';
+  document.getElementById('panel-owner-desc').textContent = '';
+  document.getElementById('p-origin').textContent  = '???';
+  document.getElementById('p-dest').textContent    = '???';
+  document.getElementById('p-tail').textContent    = plane.tail || 'N/A';
+  document.getElementById('p-atype').textContent   = '—';
+  document.getElementById('p-alt').textContent     = `${Number(plane.altitude || 0).toLocaleString()} ft`;
+  document.getElementById('p-speed').textContent   = plane.speed ? `${Math.round(plane.speed)} kts` : '—';
+  document.getElementById('p-heading').textContent = plane.heading ? `${Math.round(plane.heading)}°` : '—';
+  document.getElementById('p-squawk').textContent  = '—';
+
+  document.getElementById('detail-panel').classList.add('open');
+
+  // Highlight in sidebar
+  document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
+  const rowId = `sb-snap-${(plane.tail || '').replace(/\W/g, '')}`;
+  const row = document.getElementById(rowId);
+  if (row) row.classList.add('active');
+}
+
 
 // ============================================================
 //  CLOSE PANEL
@@ -939,52 +1024,46 @@ async function loadSnapshot(timestamp) {
 function closePanel() {
   document.getElementById('detail-panel').classList.remove('open');
   document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
+  // Reset inline colour overrides so the next open starts clean
+  document.getElementById('panel-header').style.borderBottom = '';
+  document.getElementById('panel-callsign').style.color      = '';
+  document.getElementById('panel-owner-box').style.borderColor = '';
+  document.getElementById('panel-owner-box').style.background  = '';
   selectedHex = null; selectedIcao = null;
-  clearTrailLayers();
-  trailVisible = false;
 }
 
 
 // ============================================================
 //  LIVE BUTTON
+//  FIX: exits replay mode, resets slider to current time-of-day,
+//       restores label, and fetches live data.
 // ============================================================
-
 document.getElementById('live-btn')
   .addEventListener('click', () => {
-
     replayMode = false;
+    setSidebarMode('live');
+    document.getElementById('live-btn').classList.add('active');
+    document.getElementById('timeline-label').textContent = 'LIVE';
+    closePanel();
+
+    // Snap slider to current time-of-day and re-clamp max
+    const now = new Date();
+    const minutesNow = now.getHours() * 60 + now.getMinutes();
+    document.getElementById('timeline').value = minutesNow;
+    clampSliderToNow();
 
     loadPlanes();
-
   });
 
 
-
 // ============================================================
-//  AUTO-REFRESH
+//  AUTO-REFRESH & BOOT
 // ============================================================
 initializeDatePicker();
+buildTimelineTicks();
 loadPlanes();
-setInterval(loadPlanes, 300000);
+setInterval(() => { clampSliderToNow(); loadPlanes(); }, 300000);
 </script>
-
-<div id="timeline-container">
-
-  <input type="date" id="date-picker">
-
-  <input
-    type="range"
-    id="timeline"
-    min="0"
-    max="1440"
-    step="1"
-    value="720"
-  />
-
-  <div id="timeline-label">Select a time</div>
-  <button id="live-btn">LIVE</button>
-
-</div>
 
 </body>
 </html>

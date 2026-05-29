@@ -17,7 +17,7 @@ import sqlite3
 #  CONFIGURATION
 # ─────────────────────────────────────────────────────────────
 USE_REAL_API  = True
-ADSB_API_KEY  = "1c1f5c9d60msh15ac82f4928dc9ap163224jsn5b0358a4d923"                  # ← paste your RapidAPI key here
+ADSB_API_KEY  = ""                  # ← paste your RapidAPI key here
 ADSB_BASE_URL = "https://adsbexchange-com1.p.rapidapi.com/v2"
 
 # OpenSky is free and requires no API key for anonymous access.
@@ -66,7 +66,7 @@ def save_snapshot(plane):
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO positions (
+        INSERT OR IGNORE INTO positions (
             timestamp,
             hex,
             tail,
@@ -202,8 +202,10 @@ def fetch_watched_planes(watchlist):
                 "icao":        meta["icao"],
             })
 
-        if should_save: ## might be in wrong place   
-            LAST_SAVE = time.time()
+    # FIX: moved outside the per-plane loop so the timestamp is only
+    # updated once per full watchlist sweep, not reset on every plane.
+    if should_save:
+        LAST_SAVE = time.time()
 
     return found, missing
 
@@ -296,31 +298,6 @@ def fetch_last_known_position(icao_hex):
 
 
 # ─────────────────────────────────────────────────────────────
-#  FETCH FLIGHT HISTORY (ADS-B Exchange)
-# ─────────────────────────────────────────────────────────────
-def fetch_real_history(hex_code):
-    url = f"{ADSB_BASE_URL}/hex/{hex_code}/"
-    req = urllib.request.Request(url, headers=adsb_headers())
-
-    try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            raw = json.loads(resp.read())
-    except Exception as e:
-        print(f"  [history] Failed for hex {hex_code}: {e}")
-        return []
-
-    trail = []
-    for pos in raw.get("ac", [{}])[0].get("trail", []):
-        trail.append({
-            "lat": pos.get("lat"),
-            "lon": pos.get("lon"),
-            "alt": pos.get("alt"),
-            "ts":  pos.get("ts"),
-        })
-    return trail
-
-
-# ─────────────────────────────────────────────────────────────
 #  FLASK ROUTES
 # ─────────────────────────────────────────────────────────────
 
@@ -343,13 +320,6 @@ def api_planes():
     return jsonify({"planes": found, "missing": missing, "source": "real"})
 
 
-@app.route("/api/history/<hex_code>")
-def api_history(hex_code):
-    """GET /api/history/<hex> — recent ADS-B trail from ADS-B Exchange."""
-    trail = fetch_real_history(hex_code)
-    return jsonify({"hex": hex_code, "trail": trail})
-
-
 @app.route("/api/last_known/<icao_hex>")
 def api_last_known(icao_hex):
     """
@@ -364,37 +334,6 @@ def api_last_known(icao_hex):
         return jsonify({"found": False, "position": None})
 
 
-@app.route("/api/history_db/<tail>")
-def api_history_db(tail):
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-
-    cur = conn.cursor()
-
-    # Last 24 hours
-    since = int(time.time()) - 24 * 60 * 60
-
-    cur.execute("""
-        SELECT *
-        FROM positions
-        WHERE tail = ?
-        AND timestamp >= ?
-        ORDER BY timestamp ASC
-    """, (tail, since))
-
-    rows = cur.fetchall()
-    conn.close()
-
-    history = [dict(row) for row in rows]
-
-    return jsonify({
-        "tail": tail,
-        "history": history
-    })
-
-
-
 @app.route("/api/snapshot")
 def api_snapshot():
 
@@ -407,20 +346,26 @@ def api_snapshot():
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # For each aircraft:
-    # find the closest datapoint BEFORE the selected timestamp
+    # For each aircraft find the closest datapoint BEFORE the selected
+    # timestamp, but only within a 30-minute staleness window.
+    # Without this window a plane last seen days ago would appear frozen
+    # at its old position for every future slider time.
+    STALENESS_WINDOW = 30 * 60   # 30 minutes in seconds
     cur.execute("""
-        SELECT p1.*
+        SELECT p1.id, p1.tail, p1.hex, p1.owner,
+               p1.lat, p1.lon, p1.altitude, p1.speed, p1.heading, p1.timestamp
         FROM positions p1
         INNER JOIN (
             SELECT tail, MAX(timestamp) AS max_ts
             FROM positions
             WHERE timestamp <= ?
+              AND timestamp >= ? - ?
             GROUP BY tail
         ) p2
         ON p1.tail = p2.tail
         AND p1.timestamp = p2.max_ts
-    """, (ts,))
+        GROUP BY p1.tail
+    """, (ts, ts, STALENESS_WINDOW))
 
     rows = cur.fetchall()
     conn.close()
