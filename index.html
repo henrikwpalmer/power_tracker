@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Plane Tracker</title>
+  <title>Power Tracker</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
@@ -85,7 +85,7 @@
       font-family: 'Share Tech Mono', monospace;
       border-bottom: 1px solid var(--panel-border); flex-shrink: 0;
     }
-    .sb-list { overflow-y: auto; flex-shrink: 0; }
+    .sb-list { overflow-y: auto; flex: 1; max-height: 300px; }
     .sb-list::-webkit-scrollbar { width: 4px; }
     .sb-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 2px; }
 
@@ -209,7 +209,39 @@
       font-family: 'Share Tech Mono', monospace; color: var(--accent);
       font-size: 12px; margin-left: auto;
     }
-    #timeline { width: 100%; accent-color: var(--accent); }
+    #timeline {
+      width: 100%;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--panel-border);
+      height: 3px;
+      border-radius: 2px;
+      outline: none;
+    }
+    #timeline::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 6px var(--accent);
+    }
+    #timeline::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 6px var(--accent);
+    }
+    #timeline::-moz-range-track {
+      background: var(--panel-border);
+      height: 3px;
+      border-radius: 2px;
+    }
     #timeline-ticks {
       display: flex; justify-content: space-between;
       font-size: 10px; color: var(--text-dim);
@@ -227,7 +259,7 @@
 
 <!-- ── Header ──────────────────────────────────────────────── -->
 <div id="header">
-  <h1>PLANE <span>TRACKER</span></h1>
+  <h1>POWER <span>TRACKER</span></h1>
   <div id="source-badge">AIRPLANES.LIVE</div>
 
   <div id="poller-status">
@@ -236,7 +268,7 @@
   </div>
 
   <div id="next-cycle-wrap">NEXT CYCLE <span id="countdown">—</span></div>
-  <div id="plane-count">Tracking <b id="count">0</b> aircraft</div>
+  <div id="plane-count">Currently Tracking <b id="count">0</b> aircraft(s)</div>
   <div id="last-updated">—</div>
 </div>
 
@@ -896,6 +928,9 @@ document.getElementById('live-btn').addEventListener('click', () => {
 
   // Snap slider back to current time-of-day
   const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  document.getElementById('date-picker').value = todayStr;
+  updateSelectedDay(todayStr);  
   document.getElementById('timeline').value = now.getHours() * 60 + now.getMinutes();
   clampSliderToNow();
 
