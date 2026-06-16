@@ -5,948 +5,200 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Power Tracker</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:           #0b0e14;
-      --panel-bg:     #0f1319;
-      --panel-border: #1e2530;
-      --accent:       #00d4ff;
-      --accent2:      #ff6b35;
-      --text:         #c8d8e8;
-      --text-dim:     #5a7080;
-      --good:         #39ff8a;
-      --sidebar-w:    260px;
+      --paper:  #f5f4f0;
+      --ink:    #1a1a1a;
+      --mid:    #555;
+      --faint:  #999;
+      --line:   #d4d0c8;
+      --mono: "IBM Plex Mono", "Courier New", monospace;
     }
 
-    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; font-size: 15px; overflow: hidden; }
-
-    /* ── Header ───────────────────────────────────────────── */
-    #header {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-      height: 48px; background: rgba(11,14,20,0.95);
-      border-bottom: 1px solid var(--panel-border);
-      display: flex; align-items: center; gap: 14px;
-      padding: 0 20px; backdrop-filter: blur(8px);
-    }
-    #header h1 { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; flex-shrink: 0; }
-    #header h1 span { color: var(--text-dim); font-weight: 400; }
-
-    #source-badge {
-      font-size: 10px; font-family: 'Share Tech Mono', monospace;
-      padding: 3px 8px; border-radius: 3px; letter-spacing: 1px;
-      background: rgba(57,255,138,0.1); color: var(--good);
-      border: 1px solid var(--good); flex-shrink: 0;
+    html, body { height: 100%; }
+    body {
+      height: 100vh;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--mono);
     }
 
-    /* Poller status dot + label */
-    #poller-status { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
-    #poller-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; transition: background .3s; }
-    #poller-dot.polling { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse .8s infinite; }
-    #poller-dot.waiting { background: var(--text-dim); }
-    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-    #poller-label { letter-spacing: 1px; }
+    /* ── Stage: two panels, one shared material ─────────────── */
+    .stage { display: flex; height: 100vh; width: 100vw; }
 
-    #next-cycle-wrap { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text-dim); }
-    #next-cycle-wrap span { color: var(--text); }
-
-    #plane-count { margin-left: auto; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-dim); flex-shrink: 0; }
-    #plane-count b { color: var(--accent); font-size: 16px; }
-    #last-updated { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
-
-    /* ── Shell ─────────────────────────────────────────────── */
-    /* Shell shrinks vertically to make room for the timeline bar */
-    #shell { position: fixed; top: 48px; bottom: 90px; left: 0; right: 0; display: flex; }
-
-    /* ── Sidebar ───────────────────────────────────────────── */
-    #sidebar {
-      width: var(--sidebar-w); flex-shrink: 0;
-      background: var(--panel-bg); border-right: 1px solid var(--panel-border);
-      display: flex; flex-direction: column; overflow: hidden;
+    .door {
+      position: relative;
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      text-decoration: none;
+      color: var(--ink);
+      overflow: hidden;
+      padding: clamp(28px, 6vw, 96px);
+      transition: flex-grow .55s cubic-bezier(.22,.61,.36,1), opacity .45s ease;
     }
 
-    /* Mode banner — LIVE / REPLAY at top of sidebar */
-    #sb-mode-banner {
-      padding: 6px 14px; flex-shrink: 0;
-      font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
-      font-family: 'Share Tech Mono', monospace;
-      border-bottom: 1px solid var(--panel-border);
+    .door--tracker {
+      background: radial-gradient(120% 90% at 18% 28%, rgba(0,0,0,0.035), transparent 60%), var(--paper);
+      border-right: 1px solid var(--line);
     }
-    #sb-mode-banner.live   { color: var(--good);  background: rgba(57,255,138,0.06); }
-    #sb-mode-banner.replay { color: #ffaa44; background: rgba(255,170,68,0.08); }
-
-    .sb-section-title {
-      padding: 10px 14px 6px; font-size: 10px; letter-spacing: 2px;
-      text-transform: uppercase; color: var(--text-dim);
-      font-family: 'Share Tech Mono', monospace;
-      border-bottom: 1px solid var(--panel-border); flex-shrink: 0;
-    }
-    .sb-list { overflow-y: auto; flex: 1; max-height: 300px; }
-    .sb-list::-webkit-scrollbar { width: 4px; }
-    .sb-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 2px; }
-
-    .sb-row {
-      padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,0.04);
-      cursor: pointer; transition: background .15s;
-      display: flex; flex-direction: column; gap: 2px;
-    }
-    .sb-row:hover { background: rgba(0,212,255,0.06); }
-    .sb-row.active { background: rgba(0,212,255,0.1); border-left: 2px solid var(--accent); }
-    .sb-owner { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sb-reg { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--accent); }
-    .sb-desc { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sb-ts { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: #8a6a40; letter-spacing: 1px; }
-
-    #sb-missing-section { flex-shrink: 0; }
-    .sb-row.missing { cursor: default; opacity: 0.5; }
-    .sb-row.missing:hover { background: none; }
-    .sb-missing-badge { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: var(--accent2); letter-spacing: 1px; }
-
-    /* Replay section — replaces live lists in replay mode */
-    #sb-replay-section { display: none; flex-direction: column; flex: 1; overflow: hidden; }
-    #sidebar.replay-mode > .sb-section-title,
-    #sidebar.replay-mode #sb-found-list,
-    #sidebar.replay-mode #sb-spacer,
-    #sidebar.replay-mode #sb-missing-section { display: none; }
-    #sidebar.replay-mode #sb-replay-section { display: flex; }
-
-    #sb-spacer { flex: 1; min-height: 8px; }
-
-    /* ── Map ───────────────────────────────────────────────── */
-    #map { flex: 1; position: relative; }
-
-    /* ── Detail panel ──────────────────────────────────────── */
-    #detail-panel {
-      position: absolute; top: 12px; right: 12px; width: 300px;
-      background: var(--panel-bg); border: 1px solid var(--panel-border);
-      border-radius: 6px; z-index: 900; display: none; flex-direction: column;
-      overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-      animation: slideIn .2s ease;
-    }
-    @keyframes slideIn { from { opacity:0; transform: translateX(16px); } to { opacity:1; transform: translateX(0); } }
-    #detail-panel.open { display: flex; }
-
-    #panel-header {
-      background: rgba(0,212,255,0.06); border-bottom: 1px solid var(--panel-border);
-      padding: 12px 16px; display: flex; align-items: flex-start; justify-content: space-between;
-    }
-    #panel-callsign { font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 2px; }
-    #panel-type { font-size: 12px; color: var(--text-dim); font-family: 'Share Tech Mono', monospace; }
-    #panel-close { cursor: pointer; color: var(--text-dim); font-size: 20px; line-height: 1; transition: color .15s; }
-    #panel-close:hover { color: var(--accent2); }
-
-    #panel-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-
-    #panel-owner-box {
-      background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.2);
-      border-radius: 4px; padding: 8px 10px; margin-bottom: 4px;
-    }
-    #panel-owner-name { font-size: 16px; font-weight: 700; color: var(--text); }
-    #panel-owner-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
-
-    .data-row { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,0.04); padding-bottom: 6px; }
-    .data-row:last-child { border-bottom: none; }
-    .data-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
-    .data-value { font-family: 'Share Tech Mono', monospace; font-size: 13px; color: var(--text); }
-    .vr-up   { color: var(--good); }
-    .vr-down { color: var(--accent2); }
-    .vr-lvl  { color: var(--text-dim); }
-
-    #trail-btn {
-      margin-top: 8px; background: rgba(0,212,255,0.08);
-      border: 1px solid var(--accent); color: var(--accent); padding: 7px;
-      border-radius: 4px; cursor: pointer; font-family: inherit;
-      font-size: 13px; font-weight: 600; letter-spacing: 1px; transition: all .2s;
-    }
-    #trail-btn:hover { background: rgba(0,212,255,0.18); }
-    #trail-btn.active { background: var(--accent); color: var(--bg); }
-
-    /* ── Legend ────────────────────────────────────────────── */
-    #legend {
-      position: absolute; bottom: 22px; left: 14px;
-      background: var(--panel-bg); border: 1px solid var(--panel-border);
-      border-radius: 6px; padding: 10px 14px; z-index: 900;
-      font-size: 11px; color: var(--text-dim); line-height: 2;
-      font-family: 'Share Tech Mono', monospace;
-    }
-    .leg-row { display: flex; align-items: center; gap: 8px; }
-    .leg-dot { width: 10px; height: 10px; border-radius: 50%; }
-
-    /* ── Timeline bar ─────────────────────────────────────── */
-    #timeline-container {
-      position: fixed; bottom: 0; left: 0; right: 0; height: 90px;
-      z-index: 1100;
-      background: rgba(15,19,25,0.96);
-      border-top: 1px solid var(--panel-border);
-      padding: 10px 24px 10px;
-      backdrop-filter: blur(8px);
-      display: flex; flex-direction: column; gap: 6px;
-    }
-    #timeline-controls { display: flex; align-items: center; gap: 10px; }
-    #date-picker {
-      background: var(--panel-bg); border: 1px solid var(--panel-border);
-      color: var(--text); padding: 3px 8px; border-radius: 4px;
-      font-family: 'Share Tech Mono', monospace; font-size: 12px;
-    }
-    #date-picker::-webkit-calendar-picker-indicator { cursor: pointer; }
-    #date-picker::-webkit-clear-button,
-    #date-picker::-webkit-inner-spin-button { display: none; }
-
-    #live-btn {
-      background: rgba(0,212,255,0.08); border: 1px solid var(--accent);
-      color: var(--accent); padding: 4px 14px; border-radius: 4px;
-      cursor: pointer; font-family: 'Share Tech Mono', monospace;
-      font-size: 12px; letter-spacing: 1px; transition: all .2s;
-    }
-    #live-btn:hover  { background: rgba(0,212,255,0.18); }
-    #live-btn.active { background: var(--accent); color: var(--bg); }
-
-    #timeline-label {
-      font-family: 'Share Tech Mono', monospace; color: var(--accent);
-      font-size: 12px; margin-left: auto;
-    }
-    #timeline {
-      width: 100%;
-      -webkit-appearance: none;
-      appearance: none;
-      background: var(--panel-border);
-      height: 3px;
-      border-radius: 2px;
-      outline: none;
-    }
-    #timeline::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--accent);
-      cursor: pointer;
-      box-shadow: 0 0 6px var(--accent);
-    }
-    #timeline::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--accent);
-      cursor: pointer;
-      border: none;
-      box-shadow: 0 0 6px var(--accent);
-    }
-    #timeline::-moz-range-track {
-      background: var(--panel-border);
-      height: 3px;
-      border-radius: 2px;
-    }
-    #timeline-ticks {
-      display: flex; justify-content: space-between;
-      font-size: 10px; color: var(--text-dim);
-      font-family: 'Share Tech Mono', monospace;
+    .door--network {
+      background: radial-gradient(120% 90% at 82% 72%, rgba(0,0,0,0.035), transparent 60%), var(--paper);
+      align-items: flex-end;
+      text-align: right;
     }
 
-    /* Leaflet overrides */
-    .leaflet-container { background: #0b0e14; }
-    .leaflet-control-zoom a { background: var(--panel-bg) !important; color: var(--text) !important; border-color: var(--panel-border) !important; }
-    .leaflet-control-attribution { background: rgba(11,14,20,0.7) !important; color: var(--text-dim) !important; }
-    .leaflet-control-attribution a { color: var(--text-dim) !important; }
+    /* Hover / focus tips the balance toward the chosen panel */
+    @media (hover: hover) and (min-width: 721px) {
+      .stage:hover .door,
+      .stage:focus-within .door { flex-grow: 0.9; }
+      .stage:hover .door:hover,
+      .stage:focus-within .door:focus-visible { flex-grow: 1.32; }
+      .stage:hover .door:not(:hover),
+      .stage:focus-within .door:not(:focus-visible) { opacity: 0.5; }
+    }
+
+    .door:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--ink); }
+
+    /* ── Eyebrow ────────────────────────────────────────────── */
+    .eyebrow {
+      font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--faint);
+      margin-bottom: clamp(14px, 3vh, 26px);
+      display: flex; align-items: center; gap: 9px;
+    }
+    .door--network .eyebrow { flex-direction: row-reverse; }
+
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--ink); flex-shrink: 0;
+      animation: blip 1.8s ease-in-out infinite;
+    }
+    @keyframes blip { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+    /* ── Title ──────────────────────────────────────────────── */
+    .title {
+      font-weight: 500; line-height: 1.0;
+      font-size: clamp(32px, 5.2vw, 66px);
+      letter-spacing: -0.01em;
+      margin-bottom: clamp(16px, 2.6vh, 26px);
+    }
+    .title span { display: block; }
+    .title em { font-style: italic; color: var(--mid); }
+
+    /* ── Description ────────────────────────────────────────── */
+    .desc {
+      max-width: 32ch; color: var(--mid);
+      font-size: clamp(12px, 1.3vw, 14px); line-height: 1.6;
+    }
+
+    /* ── Detail strip (each panel's own line-drawn motif) ───── */
+    .detail {
+      margin-top: clamp(20px, 4vh, 40px);
+      display: flex; align-items: center; gap: 12px;
+      font-size: 11px; letter-spacing: 0.04em; color: var(--faint);
+    }
+    .motif { display: block; }
+    .motif circle { fill: var(--paper); stroke: var(--ink); stroke-width: 1; }
+    .motif line   { stroke: var(--ink); stroke-opacity: 0.4; }
+    .motif .route { fill: none; stroke: var(--ink); stroke-opacity: 0.45; stroke-dasharray: 2 2.6; }
+    .motif .plane { fill: var(--ink); }
+
+    /* ── Enter affordance ───────────────────────────────────── */
+    .enter {
+      margin-top: clamp(24px, 5vh, 48px);
+      font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ink);
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    .enter .arrow { transition: transform .35s cubic-bezier(.22,.61,.36,1); }
+    .door--tracker:hover .enter .arrow { transform: translateX(6px); }
+    .door--network:hover .enter .arrow { transform: translateX(-6px); }
+
+    /* ── Masthead medallion, seated on the seam ─────────────── */
+    .seal {
+      position: fixed; top: 26px; left: 50%; transform: translateX(-50%);
+      z-index: 20; pointer-events: none; text-align: center;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 16px 34px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+    }
+    .seal .mark {
+      font-family: var(--mono); font-weight: 600;
+      font-size: 44px; line-height: 1; letter-spacing: 0.02em;
+      color: var(--ink); white-space: nowrap;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
+
+    /* ── Mobile: stack the two panels ───────────────────────── */
+    @media (max-width: 720px) {
+      body { overflow-y: auto; }
+      .stage { flex-direction: column; height: auto; min-height: 100vh; }
+      .door {
+        flex: 1 1 auto; min-height: 54vh; justify-content: center;
+        padding: 96px 28px 40px;
+      }
+      .door--tracker { border-right: none; border-bottom: 1px solid var(--line); }
+      .door--network { align-items: flex-start; text-align: left; }
+      .door--network .eyebrow { flex-direction: row; }
+      .seal { position: absolute; padding: 12px 24px; }
+      .seal .mark { font-size: 30px; }
+    }
   </style>
 </head>
 <body>
 
-<!-- ── Header ──────────────────────────────────────────────── -->
-<div id="header">
-  <h1>POWER <span>TRACKER</span></h1>
-  <div id="source-badge">AIRPLANES.LIVE</div>
-
-  <div id="poller-status">
-    <div id="poller-dot" class="waiting"></div>
-    <span id="poller-label">WAITING</span>
+  <div class="seal">
+    <div class="mark">Power Tracker</div>
   </div>
 
-  <div id="next-cycle-wrap">NEXT CYCLE <span id="countdown">—</span></div>
-  <div id="plane-count">Currently Tracking <b id="count">0</b> aircraft(s)</div>
-  <div id="last-updated">—</div>
-</div>
+  <main class="stage">
 
-<!-- ── Shell (sidebar + map) ───────────────────────────────── -->
-<div id="shell">
-
-  <!-- Sidebar -->
-  <div id="sidebar">
-    <div id="sb-mode-banner" class="live">● LIVE</div>
-
-    <!-- Live sections -->
-    <div class="sb-section-title">● AIRBORNE</div>
-    <div class="sb-list" id="sb-found-list"></div>
-    <div id="sb-spacer"></div>
-    <div id="sb-missing-section">
-      <div class="sb-section-title">○ NOT DETECTED</div>
-      <div class="sb-list" id="sb-missing-list"></div>
-    </div>
-
-    <!-- Replay section — only visible in replay mode -->
-    <div id="sb-replay-section">
-      <div class="sb-list" id="sb-replay-list"></div>
-      <div style="flex:1;min-height:8px"></div>
-    </div>
-  </div>
-
-  <!-- Map -->
-  <div id="map">
-
-    <!-- Detail panel -->
-    <div id="detail-panel">
-      <div id="panel-header">
-        <div>
-          <div id="panel-callsign">—</div>
-          <div id="panel-type">—</div>
-        </div>
-        <div id="panel-close" onclick="closePanel()">✕</div>
+    <!-- LEFT — live flight tracker -->
+    <a class="door door--tracker" href="tracker.html" aria-label="Open the live flight tracker">
+      <div class="eyebrow"><span class="live-dot"></span> Module 01 · Live & Archive</div>
+      <h2 class="title">Flight<span><em>Tracker</em></span></h2>
+      <p class="desc">A tool to track private jets across the map in real time and view historical data.</p>
+      <div class="detail">
+        <svg class="motif" width="48" height="20" viewBox="0 0 48 20" aria-hidden="true">
+          <path class="route" d="M7 15 Q24 -1 41 9"/>
+          <path class="plane" d="M22 9 l6 2.4 -6 2.4 1.7-2.4z"/>
+          <circle cx="7" cy="15" r="2.6"/><circle cx="41" cy="9" r="2.6"/>
+        </svg>
+        Live feed · airplanes.live
       </div>
-      <div id="panel-body">
+      <div class="enter">Open tracker <span class="arrow">→</span></div>
+    </a>
 
-        <div id="panel-owner-box">
-          <div id="panel-owner-name">—</div>
-          <div id="panel-owner-desc">—</div>
-        </div>
-
-        <div class="data-row">
-          <span class="data-label">Tail / Reg</span>
-          <span class="data-value" id="p-tail">—</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Aircraft Type</span>
-          <span class="data-value" id="p-atype">—</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Altitude</span>
-          <span class="data-value" id="p-alt">—</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Ground Speed</span>
-          <span class="data-value" id="p-speed">—</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Heading</span>
-          <span class="data-value" id="p-heading">—</span>
-        </div>
-        <div class="data-row" id="row-vr">
-          <span class="data-label">Vert. Rate</span>
-          <span class="data-value" id="p-vr">—</span>
-        </div>
-        <div class="data-row">
-          <span class="data-label">Squawk</span>
-          <span class="data-value" id="p-squawk">—</span>
-        </div>
-        <div class="data-row" id="row-seen">
-          <span class="data-label">Last Seen</span>
-          <span class="data-value" id="p-seen">—</span>
-        </div>
-
-        <!-- Trail button — hidden in replay mode (no live trail available) -->
-        <button id="trail-btn" onclick="toggleTrail()">SHOW FLIGHT PATH</button>
+    <!-- RIGHT — co-location network -->
+    <a class="door door--network" href="network.html" aria-label="Open the co-location network">
+      <div class="eyebrow">Module 02 · Archive</div>
+      <h2 class="title">Sociogramm<span><em></em></span></h2>
+      <p class="desc"> A social graph showing who arrives at the same airports, attends the same events and directly interacts.</p>
+      <div class="detail">
+        <svg class="motif" width="46" height="20" viewBox="0 0 46 20" aria-hidden="true">
+          <line x1="7" y1="10" x2="23" y2="4"/><line x1="23" y1="4" x2="39" y2="13"/><line x1="7" y1="10" x2="39" y2="13"/>
+          <circle cx="7" cy="10" r="3.5"/><circle cx="23" cy="4" r="3.5"/><circle cx="39" cy="13" r="3.5"/>
+        </svg>
+        Co-location graph
       </div>
-    </div>
+      <div class="enter"><span class="arrow">←</span> Open network</div>
+    </a>
 
-    <!-- Legend -->
-    <div id="legend">
-      <div class="leg-row"><div class="leg-dot" style="background:#00d4ff"></div> Live — level</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#39ff8a"></div> Live — climbing</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#ff6b35"></div> Live — descending</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#ffaa44;opacity:.7"></div> Replay snapshot</div>
-    </div>
+  </main>
 
-  </div><!-- /#map -->
-</div><!-- /#shell -->
-
-<!-- ── Timeline bar ────────────────────────────────────────── -->
-<div id="timeline-container">
-  <div id="timeline-controls">
-    <input type="date" id="date-picker" />
-    <button id="live-btn" class="active">LIVE</button>
-    <div id="timeline-label">LIVE</div>
-  </div>
-  <input type="range" id="timeline" min="0" max="1440" step="1" value="720" />
-  <div id="timeline-ticks"></div>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-// ============================================================
-//  MAP INIT
-// ============================================================
-const map = L.map('map', { center: [30.0, -40.0], zoom: 3 });
-L.tileLayer(
-  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-  { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 19 }
-).addTo(map);
-
-
-// ============================================================
-//  STATE
-// ============================================================
-let planeMarkers  = {};   // key → Leaflet marker (hex in live, tail in replay)
-let trailVisible  = false;
-let selectedHex   = null;
-let selectedTail  = null;
-let planesData    = [];
-let missingData   = [];
-let nextCycleTime = null;
-let replayMode    = false;
-let selectedDay   = null;
-let dayStartTs    = null;
-
-
-// ============================================================
-//  PER-PLANE COLOUR PALETTE
-//  Each tail is assigned a stable colour for the entire session.
-//  Live mode uses the colour directly; replay mode shows all
-//  snapshot planes in amber to signal historical data.
-// ============================================================
-const PLANE_PALETTE = [
-  '#00d4ff', '#39ff8a', '#ff9f1c', '#c77dff',
-  '#ff6b6b', '#4ecdc4', '#ffe66d', '#ff6fd8',
-];
-const planeColourMap = {};
-let   colourIndex    = 0;
-
-function getPlaneColour(tail) {
-  if (!planeColourMap[tail]) {
-    planeColourMap[tail] = PLANE_PALETTE[colourIndex % PLANE_PALETTE.length];
-    colourIndex++;
-  }
-  return planeColourMap[tail];
-}
-
-
-// ============================================================
-//  PLANE ICON
-//  Live mode: colour by vertical rate (green/cyan/orange).
-//  Replay mode: amber/dimmed to distinguish from live.
-// ============================================================
-function makePlaneIcon(heading, colour) {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
-      <g transform="rotate(${heading}, 14, 14)">
-        <polygon points="14,2 17,22 14,19 11,22" fill="${colour}" opacity="0.95"/>
-        <polygon points="14,10 26,18 14,15 2,18"  fill="${colour}" opacity="0.85"/>
-        <polygon points="14,18 19,26 14,24 9,26"  fill="${colour}" opacity="0.75"/>
-        <circle cx="14" cy="4" r="2" fill="white" opacity="0.6"/>
-      </g>
-    </svg>`;
-  return L.divIcon({ className: '', html: svg, iconSize: [28,28], iconAnchor: [14,14] });
-}
-
-// In live mode colour by vertical rate; in replay always amber
-function liveIconColour(verticalRate) {
-  return verticalRate >  100 ? '#39ff8a' :
-         verticalRate < -100 ? '#ff6b35' : '#00d4ff';
-}
-
-
-// ============================================================
-//  HEADER STATUS — poller dot, label, countdown
-// ============================================================
-function tickCountdown() {
-  const el = document.getElementById('countdown');
-  if (!nextCycleTime) { el.textContent = '—'; return; }
-  const secsLeft = Math.max(0, Math.round((nextCycleTime - Date.now()) / 1000));
-  const m = String(Math.floor(secsLeft / 60)).padStart(2, '0');
-  const s = String(secsLeft % 60).padStart(2, '0');
-  el.textContent = `${m}:${s}`;
-}
-
-function updatePollerStatus(status, currentReg) {
-  const dot   = document.getElementById('poller-dot');
-  const label = document.getElementById('poller-label');
-  if (status === 'polling') {
-    dot.className     = 'polling';
-    label.textContent = currentReg ? `POLLING ${currentReg}` : 'POLLING';
-  } else if (status === 'waiting') {
-    dot.className     = 'waiting';
-    label.textContent = 'WAITING';
-  } else {
-    dot.className     = 'waiting';
-    label.textContent = 'STARTING';
-  }
-}
-
-
-// ============================================================
-//  SIDEBAR HELPERS
-// ============================================================
-function setSidebarMode(mode) {
-  const sidebar = document.getElementById('sidebar');
-  const banner  = document.getElementById('sb-mode-banner');
-  if (mode === 'replay') {
-    sidebar.classList.add('replay-mode');
-    banner.className   = 'replay';
-    banner.textContent = '⏪ REPLAY MODE';
-  } else {
-    sidebar.classList.remove('replay-mode');
-    banner.className   = 'live';
-    banner.textContent = '● LIVE';
-  }
-}
-
-function renderFoundList(planes) {
-  const el = document.getElementById('sb-found-list');
-  el.innerHTML = '';
-  if (!planes.length) {
-    el.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">None detected</div>';
-    return;
-  }
-  planes.forEach(p => {
-    const colour = getPlaneColour(p.tail);
-    const row    = document.createElement('div');
-    row.className = 'sb-row';
-    row.id = `sb-row-${p.hex}`;
-    row.innerHTML = `
-      <div class="sb-owner" style="color:${colour}">${p.owner || p.tail}</div>
-      <div class="sb-reg" style="color:${colour};opacity:0.75">${p.tail}${p.callsign ? ' · ' + p.callsign : ''}</div>
-      <div class="sb-desc">${p.description || ''}</div>`;
-    row.addEventListener('click', () => selectPlane(p.hex));
-    el.appendChild(row);
-  });
-}
-
-function renderMissingList(missing) {
-  const el = document.getElementById('sb-missing-list');
-  el.innerHTML = '';
-  if (!missing.length) {
-    el.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">All planes detected</div>';
-    return;
-  }
-  missing.forEach(m => {
-    const row = document.createElement('div');
-    row.className = 'sb-row missing';
-    row.innerHTML = `
-      <div class="sb-owner">${m.owner || m.tail}</div>
-      <div class="sb-reg">${m.tail} <span class="sb-missing-badge">NO SIGNAL</span></div>
-      <div class="sb-desc">${m.description || ''}</div>`;
-    el.appendChild(row);
-  });
-}
-
-function setSidebarActive(key) {
-  document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
-  const row = document.getElementById(`sb-row-${key}`);
-  if (row) row.classList.add('active');
-}
-
-function renderSnapshotSidebar(planes, timestamp) {
-  const el = document.getElementById('sb-replay-list');
-  el.innerHTML = '';
-
-  if (!planes.length) {
-    el.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text-dim)">No data for this time</div>';
-    return;
-  }
-
-  planes.forEach(plane => {
-    const colour  = getPlaneColour(plane.tail);
-    const row     = document.createElement('div');
-    const seenAgo = timestamp - plane.timestamp;
-    const seenStr = seenAgo < 90 ? 'just now' : `${Math.round(seenAgo / 60)} min ago`;
-
-    row.className = 'sb-row';
-    row.id = `sb-snap-${(plane.tail || '').replace(/\W/g, '')}`;
-    row.innerHTML = `
-      <div class="sb-owner" style="color:${colour}">${plane.owner || plane.tail}</div>
-      <div class="sb-reg" style="color:${colour};opacity:0.75">${plane.tail} · ${Math.round(plane.altitude || 0).toLocaleString()} ft</div>
-      <div class="sb-ts">RECORDED ${seenStr.toUpperCase()}</div>`;
-    row.addEventListener('click', () => {
-      map.panTo([plane.lat, plane.lon], { animate: true, duration: 0.5 });
-      selectSnapshotPlane(plane);
-    });
-    el.appendChild(row);
-  });
-}
-
-
-// ============================================================
-//  LOAD PLANES (live mode)
-// ============================================================
-async function loadPlanes() {
-  if (replayMode) return;   // don't overwrite snapshot markers
-
-  try {
-    const resp = await fetch('/api/planes');
-    const data = await resp.json();
-
-    planesData  = data.planes  || [];
-    missingData = data.missing || [];
-
-    document.getElementById('count').textContent = planesData.length;
-    document.getElementById('last-updated').textContent =
-      data.last_updated ? `UPDATED ${data.last_updated}` : '—';
-
-    if (data.next_cycle) {
-      nextCycleTime = new Date(data.next_cycle.replace(' UTC', 'Z'));
-    }
-    updatePollerStatus(data.status, data.current_reg);
-
-    // Remove stale markers
-    const freshHexes = new Set(planesData.map(p => p.hex));
-    for (const hex of Object.keys(planeMarkers)) {
-      if (!freshHexes.has(hex)) { map.removeLayer(planeMarkers[hex]); delete planeMarkers[hex]; }
-    }
-
-    // Add or update markers
-    for (const plane of planesData) {
-      const colour = getPlaneColour(plane.tail);
-      const icon   = makePlaneIcon(plane.heading, liveIconColour(plane.vertical));
-      if (planeMarkers[plane.hex]) {
-        planeMarkers[plane.hex].setLatLng([plane.lat, plane.lon]).setIcon(icon);
-      } else {
-        const marker = L.marker([plane.lat, plane.lon], { icon })
-          .addTo(map)
-          .on('click', () => selectPlane(plane.hex));
-        marker.bindTooltip(
-          `<b style="color:${colour}">${plane.owner || plane.callsign || plane.tail}</b>
-           <br/>${plane.type} · ${Number(plane.altitude).toLocaleString()} ft`,
-          { direction: 'top', offset: [0, -12] }
-        );
-        planeMarkers[plane.hex] = marker;
-      }
-    }
-
-    renderFoundList(planesData);
-    renderMissingList(missingData);
-    if (selectedHex) setSidebarActive(selectedHex);
-
-  } catch (err) {
-    console.error('Failed to load planes:', err);
-  }
-}
-
-
-// ============================================================
-//  SELECT LIVE PLANE
-// ============================================================
-function selectPlane(hex) {
-  selectedHex  = hex;
-  selectedTail = null;
-  trailVisible = false;
-
-  const plane = planesData.find(p => p.hex === hex);
-  if (!plane) return;
-
-  selectedTail = plane.tail;
-  const colour = getPlaneColour(plane.tail);
-
-  // Apply per-plane colour accent to panel header
-  document.getElementById('panel-header').style.borderBottom = `2px solid ${colour}`;
-  document.getElementById('panel-callsign').style.color      = colour;
-  document.getElementById('panel-owner-box').style.borderColor = colour + '55';
-  document.getElementById('panel-owner-box').style.background  = colour + '0d';
-
-  document.getElementById('panel-callsign').textContent   = plane.callsign || plane.tail || 'N/A';
-  document.getElementById('panel-type').textContent       = `${plane.type} · ${plane.hex.toUpperCase()}`;
-  document.getElementById('panel-owner-name').textContent = plane.owner       || 'Unknown';
-  document.getElementById('panel-owner-desc').textContent = plane.description || '';
-  document.getElementById('p-tail').textContent    = plane.tail     || 'N/A';
-  document.getElementById('p-atype').textContent   = plane.type     || 'Unknown';
-  document.getElementById('p-alt').textContent     = `${Number(plane.altitude).toLocaleString()} ft`;
-  document.getElementById('p-speed').textContent   = `${plane.speed} kts`;
-  document.getElementById('p-heading').textContent = `${plane.heading}°`;
-  document.getElementById('p-squawk').textContent  = plane.squawk || '—';
-  document.getElementById('p-seen').textContent    = plane.seen != null ? `${plane.seen}s ago` : '—';
-
-  const vr   = plane.vertical;
-  const vrEl = document.getElementById('p-vr');
-  vrEl.textContent = `${vr > 100 ? '▲' : vr < -100 ? '▼' : '→'} ${Math.abs(vr)} fpm`;
-  vrEl.className   = `data-value ${vr > 100 ? 'vr-up' : vr < -100 ? 'vr-down' : 'vr-lvl'}`;
-
-  // Show live-only rows, show trail button
-  document.getElementById('row-vr').style.display   = '';
-  document.getElementById('row-seen').style.display = '';
-  document.getElementById('trail-btn').style.display = '';
-  document.getElementById('trail-btn').textContent  = 'SHOW FLIGHT PATH';
-  document.getElementById('trail-btn').classList.remove('active');
-  clearTrailLayers();
-
-  document.getElementById('detail-panel').classList.add('open');
-  setSidebarActive(hex);
-  map.panTo([plane.lat, plane.lon], { animate: true, duration: 0.5 });
-}
-
-
-// ============================================================
-//  SELECT SNAPSHOT PLANE (replay mode)
-// ============================================================
-function selectSnapshotPlane(plane) {
-  selectedHex  = null;
-  selectedTail = null;
-
-  const colour = getPlaneColour(plane.tail);
-
-  document.getElementById('panel-header').style.borderBottom  = `2px solid ${colour}`;
-  document.getElementById('panel-callsign').style.color        = colour;
-  document.getElementById('panel-owner-box').style.borderColor = colour + '55';
-  document.getElementById('panel-owner-box').style.background  = colour + '0d';
-
-  document.getElementById('panel-callsign').textContent   = plane.tail  || 'N/A';
-  document.getElementById('panel-type').textContent       = plane.hex   ? plane.hex.toUpperCase() : '—';
-  document.getElementById('panel-owner-name').textContent = plane.owner || 'Unknown';
-  document.getElementById('panel-owner-desc').textContent = '';
-  document.getElementById('p-tail').textContent    = plane.tail || 'N/A';
-  document.getElementById('p-atype').textContent   = '—';
-  document.getElementById('p-alt').textContent     = `${Number(plane.altitude || 0).toLocaleString()} ft`;
-  document.getElementById('p-speed').textContent   = plane.speed   ? `${Math.round(plane.speed)} kts` : '—';
-  document.getElementById('p-heading').textContent = plane.heading ? `${Math.round(plane.heading)}°`  : '—';
-  document.getElementById('p-squawk').textContent  = '—';
-
-  // Hide live-only rows and trail button in replay mode
-  document.getElementById('row-vr').style.display    = 'none';
-  document.getElementById('row-seen').style.display  = 'none';
-  document.getElementById('trail-btn').style.display = 'none';
-  clearTrailLayers();
-
-  document.getElementById('detail-panel').classList.add('open');
-
-  document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
-  const snapRow = document.getElementById(`sb-snap-${(plane.tail || '').replace(/\W/g, '')}`);
-  if (snapRow) snapRow.classList.add('active');
-}
-
-
-// ============================================================
-//  TRAIL (live mode only)
-// ============================================================
-function clearTrailLayers() {
-  map.eachLayer(layer => {
-    if (layer instanceof L.Polyline || layer instanceof L.CircleMarker) map.removeLayer(layer);
-  });
-}
-
-async function drawTrail(tail) {
-  clearTrailLayers();
-  try {
-    const resp  = await fetch(`/api/trail/${tail}`);
-    const data  = await resp.json();
-    const trail = data.trail;
-
-    if (!trail || trail.length < 2) {
-      // Fallback: dashed heading-direction line
-      const plane = planesData.find(p => p.tail === tail);
-      if (plane) {
-        const rad     = (plane.heading - 180) * Math.PI / 180;
-        const tailLat = plane.lat + Math.cos(rad) * 0.3;
-        const tailLon = plane.lon + Math.sin(rad) * 0.3;
-        L.polyline([[tailLat, tailLon], [plane.lat, plane.lon]], {
-          color: '#00d4ff', weight: 2, opacity: 0.5, dashArray: '6 4',
-        }).addTo(map);
-      }
-      return;
-    }
-
-    // Gradient trail: dim+thin at oldest, bright+thick at newest
-    for (let i = 0; i < trail.length - 1; i++) {
-      const frac    = i / (trail.length - 1);
-      const opacity = 0.15 + frac * 0.85;
-      const weight  = 1   + frac * 2.5;
-      L.polyline(
-        [[trail[i].lat, trail[i].lon], [trail[i+1].lat, trail[i+1].lon]],
-        { color: '#00d4ff', weight, opacity, lineJoin: 'round' }
-      ).addTo(map);
-    }
-    L.circleMarker([trail[0].lat, trail[0].lon], {
-      radius: 4, color: '#00d4ff', fillColor: '#00d4ff',
-      fillOpacity: 0.3, weight: 1,
-    }).addTo(map).bindTooltip('Trail start');
-
-  } catch (err) {
-    console.error('Trail fetch error:', err);
-  }
-}
-
-function toggleTrail() {
-  const btn = document.getElementById('trail-btn');
-  if (!selectedTail) return;
-  if (!trailVisible) {
-    drawTrail(selectedTail);
-    btn.textContent = 'HIDE FLIGHT PATH';
-    btn.classList.add('active');
-    trailVisible = true;
-  } else {
-    clearTrailLayers();
-    btn.textContent = 'SHOW FLIGHT PATH';
-    btn.classList.remove('active');
-    trailVisible = false;
-  }
-}
-
-
-// ============================================================
-//  CLOSE PANEL
-// ============================================================
-function closePanel() {
-  document.getElementById('detail-panel').classList.remove('open');
-  document.querySelectorAll('.sb-row.active').forEach(r => r.classList.remove('active'));
-  // Reset inline colour overrides
-  document.getElementById('panel-header').style.borderBottom    = '';
-  document.getElementById('panel-callsign').style.color         = '';
-  document.getElementById('panel-owner-box').style.borderColor  = '';
-  document.getElementById('panel-owner-box').style.background   = '';
-  selectedHex = null; selectedTail = null;
-  clearTrailLayers();
-  trailVisible = false;
-}
-
-
-// ============================================================
-//  TIMELINE — date picker, slider, replay mode
-// ============================================================
-
-// Initialise date picker to today and set dayStartTs
-function initializeDatePicker() {
-  const picker  = document.getElementById('date-picker');
-  const today   = new Date();
-  const dateStr = today.toISOString().slice(0, 10);
-  picker.value  = dateStr;
-  picker.max    = dateStr;
-  updateSelectedDay(dateStr);
-}
-
-// Convert a date string to UTC start-of-day timestamp
-function updateSelectedDay(dateStr) {
-  selectedDay = dateStr;
-  dayStartTs  = Math.floor(new Date(dateStr + 'T00:00:00').getTime() / 1000);
-  clampSliderToNow();
-}
-
-// Prevent the slider going past the current time on today's date
-function clampSliderToNow() {
-  const slider   = document.getElementById('timeline');
-  const today    = new Date().toISOString().slice(0, 10);
-  if (selectedDay === today) {
-    const now = new Date();
-    const maxMinutes = now.getHours() * 60 + now.getMinutes();
-    slider.max = maxMinutes;
-    if (parseInt(slider.value) > maxMinutes) slider.value = maxMinutes;
-  } else {
-    slider.max = 1440;
-  }
-}
-
-function formatTimeFromMinutes(min) {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
-}
-
-// Build 00:00 / 06:00 / 12:00 / 18:00 / 24:00 tick labels
-function buildTimelineTicks() {
-  const el = document.getElementById('timeline-ticks');
-  ['00:00','06:00','12:00','18:00','24:00'].forEach(t => {
-    const span = document.createElement('div');
-    span.textContent = t;
-    el.appendChild(span);
-  });
-}
-
-
-// ============================================================
-//  LOAD SNAPSHOT (replay mode)
-// ============================================================
-async function loadSnapshot(timestamp) {
-  try {
-    const resp   = await fetch(`/api/snapshot?ts=${timestamp}`);
-    const data   = await resp.json();
-    const planes = data.planes;
-
-    // Clear all markers (live or previous snapshot)
-    for (const key of Object.keys(planeMarkers)) map.removeLayer(planeMarkers[key]);
-    planeMarkers = {};
-    clearTrailLayers();
-
-    planes.forEach(plane => {
-      const colour = getPlaneColour(plane.tail);
-      // Snapshot icons are amber/dimmed to indicate historical data
-      const icon   = makePlaneIcon(plane.heading || 0, '#ffaa44');
-      const marker = L.marker([plane.lat, plane.lon], { icon })
-        .addTo(map)
-        .on('click', () => selectSnapshotPlane(plane));
-      marker.bindTooltip(
-        `<b style="color:${colour}">${plane.tail}</b><br/><span style="color:#8a9aaa">${plane.owner || ''}</span>`,
-        { direction: 'top' }
-      );
-      planeMarkers[plane.tail] = marker;
-    });
-
-    renderSnapshotSidebar(planes, timestamp);
-
-    // Update label with readable date+time
-    const date = new Date(timestamp * 1000);
-    document.getElementById('timeline-label').textContent =
-      date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-  } catch (err) {
-    console.error('Snapshot error:', err);
-  }
-}
-
-
-// ============================================================
-//  TIMELINE EVENT LISTENERS
-// ============================================================
-
-// Date picker change — update day, reload snapshot if in replay
-document.getElementById('date-picker').addEventListener('change', e => {
-  updateSelectedDay(e.target.value);
-  if (replayMode) {
-    const minuteOfDay = parseInt(document.getElementById('timeline').value);
-    loadSnapshot(dayStartTs + minuteOfDay * 60);
-  }
-});
-
-// Slider drag — enter replay mode and load the selected snapshot
-document.getElementById('timeline').addEventListener('input', e => {
-  const minuteOfDay = parseInt(e.target.value);
-  const ts          = dayStartTs + minuteOfDay * 60;
-
-  replayMode = true;
-  setSidebarMode('replay');
-  document.getElementById('live-btn').classList.remove('active');
-  document.getElementById('timeline-label').textContent = formatTimeFromMinutes(minuteOfDay);
-  closePanel();
-  loadSnapshot(ts);
-});
-
-// LIVE button — exit replay, restore live data
-document.getElementById('live-btn').addEventListener('click', () => {
-  replayMode = false;
-  setSidebarMode('live');
-  document.getElementById('live-btn').classList.add('active');
-  document.getElementById('timeline-label').textContent = 'LIVE';
-  closePanel();
-
-  // Snap slider back to current time-of-day
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  document.getElementById('date-picker').value = todayStr;
-  updateSelectedDay(todayStr);  
-  document.getElementById('timeline').value = now.getHours() * 60 + now.getMinutes();
-  clampSliderToNow();
-
-  loadPlanes();
-});
-
-
-// ============================================================
-//  BOOT & TIMERS
-// ============================================================
-initializeDatePicker();
-buildTimelineTicks();
-loadPlanes();
-setInterval(loadPlanes,    10_000);   // refresh live cache every 10s
-setInterval(tickCountdown,  1_000);   // tick countdown clock every 1s
-setInterval(clampSliderToNow, 60_000); // keep slider max current
-</script>
 </body>
 </html>
