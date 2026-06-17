@@ -3,3 +3,4 @@ _old/
 planes.db
 planes.db-wal
 planes.db-shm
+.DS_Store

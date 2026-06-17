@@ -13,10 +13,14 @@
 =============================================================
 """
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, send_from_directory 
 import urllib.request, json, csv, os, time, threading, sqlite3
 
 app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return send_from_directory('.', 'index.html')
 
 # ─────────────────────────────────────────────────────────────
 #  CONFIGURATION
@@ -368,6 +372,11 @@ def api_snapshot():
     return jsonify({"timestamp": ts, "planes": [dict(r) for r in rows]})
 
 
+@app.route('/<path:filename>')        # <-- the new route, near the bottom
+def serve_page(filename):
+    return send_from_directory('.', filename)
+
+
 # ─────────────────────────────────────────────────────────────
 #  ENTRY POINT
 # ─────────────────────────────────────────────────────────────
@@ -375,7 +384,7 @@ if __name__ == "__main__":
     init_db()
     wl = load_watchlist()
     print("=" * 55)
-    print("  Plane Tracker — running at http://127.0.0.1:5000")
+    print("  Plane Tracker — running at http://127.0.0.1:5050")
     print(f"  Watching   : {len(wl)} planes from {CSV_PATH}")
     print(f"  Database   : {DB_PATH}")
     print(f"  Poll gap   : {POLL_INTERVAL}s per plane")
@@ -390,4 +399,4 @@ if __name__ == "__main__":
     poller.start()
 
     # use_reloader=False prevents the reloader from forking a second polling thread
-    app.run(debug=True, host="0.0.0.0", port=5000, use_reloader=False)
+    app.run(debug=True, host="0.0.0.0", port=5050, use_reloader=False)
