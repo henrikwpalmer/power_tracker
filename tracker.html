@@ -6,57 +6,62 @@
   <title>Power Tracker</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:           #0b0e14;
-      --panel-bg:     #0f1319;
-      --panel-border: #1e2530;
-      --accent:       #00d4ff;
-      --accent2:      #ff6b35;
-      --text:         #c8d8e8;
-      --text-dim:     #5a7080;
-      --good:         #39ff8a;
+      /* Dark mirror of the network view: warm-neutral, monochrome, thin lines.
+         Per-plane data colours (PLANE_PALETTE) provide the only real colour. */
+      --bg:           #15171b;
+      --panel-bg:     #1b1e23;
+      --panel-border: #2c2f36;
+      --accent:       #e7e4dc;   /* neutral light "ink" — the network's accent is just ink */
+      --accent2:      #c9805a;   /* muted clay, used only for subtle close/alert states */
+      --text:         #e7e4dc;
+      --text-dim:     #86837c;
+      --good:         #7faa86;   /* muted sage for the LIVE indicator */
       --sidebar-w:    260px;
+      --mono: "IBM Plex Mono", "Courier New", monospace;
     }
 
-    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; font-size: 15px; overflow: hidden; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 15px; overflow: hidden; }
 
     /* ── Header ───────────────────────────────────────────── */
     #header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-      height: 48px; background: rgba(11,14,20,0.95);
+      height: 48px; background: rgba(21,23,27,0.95);
       border-bottom: 1px solid var(--panel-border);
       display: flex; align-items: center; gap: 14px;
       padding: 0 20px; backdrop-filter: blur(8px);
     }
-    #header h1 { font-size: 20px; font-weight: 700; letter-spacing: 3px; color: var(--accent); text-transform: uppercase; flex-shrink: 0; }
-    #header h1 span { color: var(--text-dim); font-weight: 400; }
+    #header h1 { font-size: 19px; font-weight: 600; letter-spacing: 0.02em; color: var(--accent); flex-shrink: 0; }
+    #header h1 span { color: var(--text-dim); font-weight: 500; }
 
     #source-badge {
-      font-size: 10px; font-family: 'Share Tech Mono', monospace;
-      padding: 3px 8px; border-radius: 3px; letter-spacing: 1px;
-      background: rgba(57,255,138,0.1); color: var(--good);
+      font-size: 10px; font-family: var(--mono);
+      padding: 3px 8px; border-radius: 0; letter-spacing: 1px;
+      background: rgba(127,170,134,0.12); color: var(--good);
       border: 1px solid var(--good); flex-shrink: 0;
     }
 
     /* Poller status dot + label */
-    #poller-status { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
+    #poller-status { font-family: var(--mono); font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
     #poller-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; transition: background .3s; }
-    #poller-dot.polling { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse .8s infinite; }
+    #poller-dot.polling { background: var(--accent); animation: pulse .8s infinite; }
     #poller-dot.waiting { background: var(--text-dim); }
     @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
     #poller-label { letter-spacing: 1px; }
 
-    #next-cycle-wrap { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--text-dim); }
+    #next-cycle-wrap { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
     #next-cycle-wrap span { color: var(--text); }
 
-    #plane-count { margin-left: auto; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--text-dim); flex-shrink: 0; }
+    #plane-count { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--text-dim); flex-shrink: 0; }
     #plane-count b { color: var(--accent); font-size: 16px; }
-    #last-updated { font-family: 'Share Tech Mono', monospace; font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
+    #last-updated { font-family: var(--mono); font-size: 10px; color: var(--text-dim); flex-shrink: 0; }
 
     /* ── Shell ─────────────────────────────────────────────── */
     /* Shell shrinks vertically to make room for the timeline bar */
@@ -73,38 +78,38 @@
     #sb-mode-banner {
       padding: 6px 14px; flex-shrink: 0;
       font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
-      font-family: 'Share Tech Mono', monospace;
+      font-family: var(--mono);
       border-bottom: 1px solid var(--panel-border);
     }
-    #sb-mode-banner.live   { color: var(--good);  background: rgba(57,255,138,0.06); }
-    #sb-mode-banner.replay { color: #ffaa44; background: rgba(255,170,68,0.08); }
+    #sb-mode-banner.live   { color: var(--good);  background: rgba(127,170,134,0.08); }
+    #sb-mode-banner.replay { color: #c9805a; background: rgba(201,128,90,0.08); }
 
     .sb-section-title {
       padding: 10px 14px 6px; font-size: 10px; letter-spacing: 2px;
       text-transform: uppercase; color: var(--text-dim);
-      font-family: 'Share Tech Mono', monospace;
+      font-family: var(--mono);
       border-bottom: 1px solid var(--panel-border); flex-shrink: 0;
     }
     .sb-list { overflow-y: auto; flex: 1; max-height: 300px; }
     .sb-list::-webkit-scrollbar { width: 4px; }
-    .sb-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 2px; }
+    .sb-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 0; }
 
     .sb-row {
       padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,0.04);
       cursor: pointer; transition: background .15s;
       display: flex; flex-direction: column; gap: 2px;
     }
-    .sb-row:hover { background: rgba(0,212,255,0.06); }
-    .sb-row.active { background: rgba(0,212,255,0.1); border-left: 2px solid var(--accent); }
+    .sb-row:hover { background: rgba(231,228,220,0.05); }
+    .sb-row.active { background: rgba(231,228,220,0.09); border-left: 2px solid var(--accent); }
     .sb-owner { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sb-reg { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--accent); }
+    .sb-reg { font-family: var(--mono); font-size: 11px; color: var(--accent); }
     .sb-desc { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sb-ts { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: #8a6a40; letter-spacing: 1px; }
+    .sb-ts { font-size: 9px; font-family: var(--mono); color: #9b8158; letter-spacing: 1px; }
 
     #sb-missing-section { flex-shrink: 0; }
     .sb-row.missing { cursor: default; opacity: 0.5; }
     .sb-row.missing:hover { background: none; }
-    .sb-missing-badge { font-size: 9px; font-family: 'Share Tech Mono', monospace; color: var(--accent2); letter-spacing: 1px; }
+    .sb-missing-badge { font-size: 9px; font-family: var(--mono); color: var(--accent2); letter-spacing: 1px; }
 
     /* Replay section — replaces live lists in replay mode */
     #sb-replay-section { display: none; flex-direction: column; flex: 1; overflow: hidden; }
@@ -123,27 +128,27 @@
     #detail-panel {
       position: absolute; top: 12px; right: 12px; width: 300px;
       background: var(--panel-bg); border: 1px solid var(--panel-border);
-      border-radius: 6px; z-index: 900; display: none; flex-direction: column;
-      overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      border-radius: 0; z-index: 900; display: none; flex-direction: column;
+      overflow: hidden; box-shadow: 0 8px 28px rgba(0,0,0,0.4);
       animation: slideIn .2s ease;
     }
     @keyframes slideIn { from { opacity:0; transform: translateX(16px); } to { opacity:1; transform: translateX(0); } }
     #detail-panel.open { display: flex; }
 
     #panel-header {
-      background: rgba(0,212,255,0.06); border-bottom: 1px solid var(--panel-border);
+      background: rgba(231,228,220,0.05); border-bottom: 1px solid var(--panel-border);
       padding: 12px 16px; display: flex; align-items: flex-start; justify-content: space-between;
     }
     #panel-callsign { font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 2px; }
-    #panel-type { font-size: 12px; color: var(--text-dim); font-family: 'Share Tech Mono', monospace; }
+    #panel-type { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
     #panel-close { cursor: pointer; color: var(--text-dim); font-size: 20px; line-height: 1; transition: color .15s; }
     #panel-close:hover { color: var(--accent2); }
 
     #panel-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 
     #panel-owner-box {
-      background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.2);
-      border-radius: 4px; padding: 8px 10px; margin-bottom: 4px;
+      background: rgba(231,228,220,0.04); border: 1px solid rgba(231,228,220,0.18);
+      border-radius: 0; padding: 8px 10px; margin-bottom: 4px;
     }
     #panel-owner-name { font-size: 16px; font-weight: 700; color: var(--text); }
     #panel-owner-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
@@ -151,36 +156,25 @@
     .data-row { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid rgba(255,255,255,0.04); padding-bottom: 6px; }
     .data-row:last-child { border-bottom: none; }
     .data-label { font-size: 11px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
-    .data-value { font-family: 'Share Tech Mono', monospace; font-size: 13px; color: var(--text); }
+    .data-value { font-family: var(--mono); font-size: 13px; color: var(--text); }
     .vr-up   { color: var(--good); }
     .vr-down { color: var(--accent2); }
     .vr-lvl  { color: var(--text-dim); }
 
     #trail-btn {
-      margin-top: 8px; background: rgba(0,212,255,0.08);
+      margin-top: 8px; background: rgba(231,228,220,0.06);
       border: 1px solid var(--accent); color: var(--accent); padding: 7px;
-      border-radius: 4px; cursor: pointer; font-family: inherit;
+      border-radius: 0; cursor: pointer; font-family: inherit;
       font-size: 13px; font-weight: 600; letter-spacing: 1px; transition: all .2s;
     }
-    #trail-btn:hover { background: rgba(0,212,255,0.18); }
+    #trail-btn:hover { background: rgba(231,228,220,0.12); }
     #trail-btn.active { background: var(--accent); color: var(--bg); }
-
-    /* ── Legend ────────────────────────────────────────────── */
-    #legend {
-      position: absolute; bottom: 22px; left: 14px;
-      background: var(--panel-bg); border: 1px solid var(--panel-border);
-      border-radius: 6px; padding: 10px 14px; z-index: 900;
-      font-size: 11px; color: var(--text-dim); line-height: 2;
-      font-family: 'Share Tech Mono', monospace;
-    }
-    .leg-row { display: flex; align-items: center; gap: 8px; }
-    .leg-dot { width: 10px; height: 10px; border-radius: 50%; }
 
     /* ── Timeline bar ─────────────────────────────────────── */
     #timeline-container {
       position: fixed; bottom: 0; left: 0; right: 0; height: 90px;
       z-index: 1100;
-      background: rgba(15,19,25,0.96);
+      background: rgba(27,30,35,0.96);
       border-top: 1px solid var(--panel-border);
       padding: 10px 24px 10px;
       backdrop-filter: blur(8px);
@@ -189,24 +183,24 @@
     #timeline-controls { display: flex; align-items: center; gap: 10px; }
     #date-picker {
       background: var(--panel-bg); border: 1px solid var(--panel-border);
-      color: var(--text); padding: 3px 8px; border-radius: 4px;
-      font-family: 'Share Tech Mono', monospace; font-size: 12px;
+      color: var(--text); padding: 3px 8px; border-radius: 0;
+      font-family: var(--mono); font-size: 12px;
     }
     #date-picker::-webkit-calendar-picker-indicator { cursor: pointer; }
     #date-picker::-webkit-clear-button,
     #date-picker::-webkit-inner-spin-button { display: none; }
 
     #live-btn {
-      background: rgba(0,212,255,0.08); border: 1px solid var(--accent);
-      color: var(--accent); padding: 4px 14px; border-radius: 4px;
-      cursor: pointer; font-family: 'Share Tech Mono', monospace;
+      background: rgba(231,228,220,0.06); border: 1px solid var(--accent);
+      color: var(--accent); padding: 4px 14px; border-radius: 0;
+      cursor: pointer; font-family: var(--mono);
       font-size: 12px; letter-spacing: 1px; transition: all .2s;
     }
-    #live-btn:hover  { background: rgba(0,212,255,0.18); }
+    #live-btn:hover  { background: rgba(231,228,220,0.12); }
     #live-btn.active { background: var(--accent); color: var(--bg); }
 
     #timeline-label {
-      font-family: 'Share Tech Mono', monospace; color: var(--accent);
+      font-family: var(--mono); color: var(--accent);
       font-size: 12px; margin-left: auto;
     }
     #timeline {
@@ -215,7 +209,7 @@
       appearance: none;
       background: var(--panel-border);
       height: 3px;
-      border-radius: 2px;
+      border-radius: 0;
       outline: none;
     }
     #timeline::-webkit-slider-thumb {
@@ -226,7 +220,7 @@
       border-radius: 50%;
       background: var(--accent);
       cursor: pointer;
-      box-shadow: 0 0 6px var(--accent);
+     
     }
     #timeline::-moz-range-thumb {
       width: 14px;
@@ -235,23 +229,23 @@
       background: var(--accent);
       cursor: pointer;
       border: none;
-      box-shadow: 0 0 6px var(--accent);
+     
     }
     #timeline::-moz-range-track {
       background: var(--panel-border);
       height: 3px;
-      border-radius: 2px;
+      border-radius: 0;
     }
     #timeline-ticks {
       display: flex; justify-content: space-between;
       font-size: 10px; color: var(--text-dim);
-      font-family: 'Share Tech Mono', monospace;
+      font-family: var(--mono);
     }
 
     /* Leaflet overrides */
-    .leaflet-container { background: #0b0e14; }
+    .leaflet-container { background: #15171b; }
     .leaflet-control-zoom a { background: var(--panel-bg) !important; color: var(--text) !important; border-color: var(--panel-border) !important; }
-    .leaflet-control-attribution { background: rgba(11,14,20,0.7) !important; color: var(--text-dim) !important; }
+    .leaflet-control-attribution { background: rgba(21,23,27,0.7) !important; color: var(--text-dim) !important; }
     .leaflet-control-attribution a { color: var(--text-dim) !important; }
 
     /* ── Cross-app nav ── */
@@ -259,12 +253,12 @@
       display: flex; align-items: center; gap: 12px; flex-shrink: 0;
       margin-left: 16px; padding-left: 16px;
       border-left: 1px solid var(--panel-border);
-      font-family: 'Share Tech Mono', monospace; font-size: 11px;
+      font-family: var(--mono); font-size: 11px;
       letter-spacing: 1px; text-transform: uppercase;
     }
     #app-nav a { color: var(--text-dim); text-decoration: none; transition: color .15s; }
     #app-nav a:hover { color: var(--accent); }
-    #app-nav a.current { color: var(--accent); cursor: default; }
+    #app-nav a.current { color: var(--accent); border-bottom: 1px solid var(--accent); padding-bottom: 2px; cursor: default; }
     #app-nav .sep { color: var(--panel-border); }
   </style>
 </head>
@@ -272,7 +266,7 @@
 
 <!-- ── Header ──────────────────────────────────────────────── -->
 <div id="header">
-  <h1>POWER <span>TRACKER</span></h1>
+  <h1>Power <span>Tracker</span></h1>
   <div id="source-badge">AIRPLANES.LIVE</div>
 
   <div id="poller-status">
@@ -373,14 +367,6 @@
       </div>
     </div>
 
-    <!-- Legend -->
-    <div id="legend">
-      <div class="leg-row"><div class="leg-dot" style="background:#00d4ff"></div> Live — level</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#39ff8a"></div> Live — climbing</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#ff6b35"></div> Live — descending</div>
-      <div class="leg-row"><div class="leg-dot" style="background:#ffaa44;opacity:.7"></div> Replay snapshot</div>
-    </div>
-
   </div><!-- /#map -->
 </div><!-- /#shell -->
 
@@ -429,8 +415,8 @@ let dayStartTs    = null;
 //  snapshot planes in amber to signal historical data.
 // ============================================================
 const PLANE_PALETTE = [
-  '#00d4ff', '#39ff8a', '#ff9f1c', '#c77dff',
-  '#ff6b6b', '#4ecdc4', '#ffe66d', '#ff6fd8',
+  '#1f8aa6', '#3f9d57', '#c98a14', '#9a5bc4',
+  '#cc4a5a', '#2d6cd6', '#b8418f', '#c2622c',
 ];
 const planeColourMap = {};
 let   colourIndex    = 0;
@@ -446,8 +432,8 @@ function getPlaneColour(tail) {
 
 // ============================================================
 //  PLANE ICON
-//  Live mode: colour by vertical rate (green/cyan/orange).
-//  Replay mode: amber/dimmed to distinguish from live.
+//  Colour is always the plane's own per-owner colour, so a plane's
+//  marker matches its name and data in the sidebar and detail panel.
 // ============================================================
 function makePlaneIcon(heading, colour) {
   const svg = `
@@ -460,12 +446,6 @@ function makePlaneIcon(heading, colour) {
       </g>
     </svg>`;
   return L.divIcon({ className: '', html: svg, iconSize: [28,28], iconAnchor: [14,14] });
-}
-
-// In live mode colour by vertical rate; in replay always amber
-function liveIconColour(verticalRate) {
-  return verticalRate >  100 ? '#39ff8a' :
-         verticalRate < -100 ? '#ff6b35' : '#00d4ff';
 }
 
 
@@ -620,7 +600,7 @@ async function loadPlanes() {
     // Add or update markers
     for (const plane of planesData) {
       const colour = getPlaneColour(plane.tail);
-      const icon   = makePlaneIcon(plane.heading, liveIconColour(plane.vertical));
+      const icon   = makePlaneIcon(plane.heading, colour);
       if (planeMarkers[plane.hex]) {
         planeMarkers[plane.hex].setLatLng([plane.lat, plane.lon]).setIcon(icon);
       } else {
@@ -747,6 +727,7 @@ function clearTrailLayers() {
 
 async function drawTrail(tail) {
   clearTrailLayers();
+  const trailColour = getPlaneColour(tail);
   try {
     const resp  = await fetch(`/api/trail/${tail}`);
     const data  = await resp.json();
@@ -760,7 +741,7 @@ async function drawTrail(tail) {
         const tailLat = plane.lat + Math.cos(rad) * 0.3;
         const tailLon = plane.lon + Math.sin(rad) * 0.3;
         L.polyline([[tailLat, tailLon], [plane.lat, plane.lon]], {
-          color: '#00d4ff', weight: 2, opacity: 0.5, dashArray: '6 4',
+          color: trailColour, weight: 2, opacity: 0.5, dashArray: '6 4',
         }).addTo(map);
       }
       return;
@@ -773,11 +754,11 @@ async function drawTrail(tail) {
       const weight  = 1   + frac * 2.5;
       L.polyline(
         [[trail[i].lat, trail[i].lon], [trail[i+1].lat, trail[i+1].lon]],
-        { color: '#00d4ff', weight, opacity, lineJoin: 'round' }
+        { color: trailColour, weight, opacity, lineJoin: 'round' }
       ).addTo(map);
     }
     L.circleMarker([trail[0].lat, trail[0].lon], {
-      radius: 4, color: '#00d4ff', fillColor: '#00d4ff',
+      radius: 4, color: trailColour, fillColor: trailColour,
       fillOpacity: 0.3, weight: 1,
     }).addTo(map).bindTooltip('Trail start');
 
@@ -841,17 +822,25 @@ function updateSelectedDay(dateStr) {
   clampSliderToNow();
 }
 
-// Prevent the slider going past the current time on today's date
+// Minutes elapsed since local midnight, i.e. the slider position for "now"
+function currentMinuteOfDay() {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+// Keep the slider on a fixed 24h scale (so the 00:00–24:00 ticks stay aligned),
+// park the live thumb at the real current time, and never allow the future.
 function clampSliderToNow() {
-  const slider   = document.getElementById('timeline');
-  const today    = new Date().toISOString().slice(0, 10);
+  const slider = document.getElementById('timeline');
+  slider.max   = 1440;
+  const today  = new Date().toISOString().slice(0, 10);
   if (selectedDay === today) {
-    const now = new Date();
-    const maxMinutes = now.getHours() * 60 + now.getMinutes();
-    slider.max = maxMinutes;
-    if (parseInt(slider.value) > maxMinutes) slider.value = maxMinutes;
-  } else {
-    slider.max = 1440;
+    const cur = currentMinuteOfDay();
+    if (!replayMode) {
+      slider.value = cur;                              // LIVE: thumb tracks "now"
+    } else if (parseInt(slider.value, 10) > cur) {
+      slider.value = cur;                              // replay: clamp out of the future
+    }
   }
 }
 
@@ -888,8 +877,7 @@ async function loadSnapshot(timestamp) {
 
     planes.forEach(plane => {
       const colour = getPlaneColour(plane.tail);
-      // Snapshot icons are amber/dimmed to indicate historical data
-      const icon   = makePlaneIcon(plane.heading || 0, '#ffaa44');
+      const icon   = makePlaneIcon(plane.heading || 0, colour);
       const marker = L.marker([plane.lat, plane.lon], { icon })
         .addTo(map)
         .on('click', () => selectSnapshotPlane(plane));
@@ -928,8 +916,16 @@ document.getElementById('date-picker').addEventListener('change', e => {
 
 // Slider drag — enter replay mode and load the selected snapshot
 document.getElementById('timeline').addEventListener('input', e => {
-  const minuteOfDay = parseInt(e.target.value);
-  const ts          = dayStartTs + minuteOfDay * 60;
+  const today = new Date().toISOString().slice(0, 10);
+  let minuteOfDay = parseInt(e.target.value, 10);
+
+  // On today's date you can't scrub into the future — clamp to the current time
+  if (selectedDay === today) {
+    const cur = currentMinuteOfDay();
+    if (minuteOfDay > cur) { minuteOfDay = cur; e.target.value = cur; }
+  }
+
+  const ts = dayStartTs + minuteOfDay * 60;
 
   replayMode = true;
   setSidebarMode('replay');
@@ -947,13 +943,10 @@ document.getElementById('live-btn').addEventListener('click', () => {
   document.getElementById('timeline-label').textContent = 'LIVE';
   closePanel();
 
-  // Snap slider back to current time-of-day
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  // Snap back to today; clampSliderToNow then parks the thumb at the current time
+  const todayStr = new Date().toISOString().slice(0, 10);
   document.getElementById('date-picker').value = todayStr;
-  updateSelectedDay(todayStr);  
-  document.getElementById('timeline').value = now.getHours() * 60 + now.getMinutes();
-  clampSliderToNow();
+  updateSelectedDay(todayStr);
 
   loadPlanes();
 });
@@ -967,7 +960,7 @@ buildTimelineTicks();
 loadPlanes();
 setInterval(loadPlanes,    10_000);   // refresh live cache every 10s
 setInterval(tickCountdown,  1_000);   // tick countdown clock every 1s
-setInterval(clampSliderToNow, 60_000); // keep slider max current
+setInterval(clampSliderToNow, 60_000); // advance the live thumb each minute
 </script>
 </body>
 </html>
